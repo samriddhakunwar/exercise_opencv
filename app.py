@@ -1,15 +1,24 @@
 """
 app.py
 ------
-Entry point for the Squat Tracker application.
+Entry point for the AI Fitness Tracker application.
 
 Responsibilities:
     * Camera capture loop
     * Gluing pose detection → exercise counter → UI renderer
-    * Keyboard input (Space, R, Q, S)
+    * Keyboard input (Space, R, Q, S, E)
     * Audio feedback dispatch
     * Session CSV export
     * Screenshot / recording management
+
+Keyboard shortcuts
+~~~~~~~~~~~~~~~~~~
+    Space  → Pause / Resume
+    R      → Reset current session
+    E      → Switch exercise (Squat ↔ Push-Up)
+    S      → Save screenshot
+    V      → Toggle video recording
+    Q / Esc→ Quit
 """
 
 from __future__ import annotations
@@ -19,7 +28,6 @@ from __future__ import annotations
 import _mp_compat  # noqa: F401
 
 import sys
-
 import csv
 import os
 import time
@@ -34,6 +42,7 @@ import numpy as np
 import config
 from pose_detector import PoseDetector
 from squat_counter import SquatCounter, FormIssue, RepResult
+from pushup_counter import PushUpCounter
 from ui import UIRenderer, RenderData
 
 # ---------------------------------------------------------------------------
@@ -45,6 +54,32 @@ try:
 except ImportError:
     _TTS_AVAILABLE = False
 
+
+# ---------------------------------------------------------------------------
+# Exercise registry
+# ---------------------------------------------------------------------------
+
+_EXERCISE_CYCLE = ["squat", "pushup"]
+
+_EXERCISE_META = {
+    "squat": {
+        "name":        "SQUAT",
+        "angle_label": "Knee",
+        "target_reps": config.TARGET_REPS,
+        "target_sets": config.TARGET_SETS,
+    },
+    "pushup": {
+        "name":        "PUSH-UP",
+        "angle_label": "Elbow",
+        "target_reps": config.TARGET_PUSHUPS,
+        "target_sets": config.TARGET_PUSHUP_SETS,
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Audio feedback
+# ---------------------------------------------------------------------------
 
 class AudioFeedback:
     """Thread-safe text-to-speech dispatcher with a per-phrase cooldown.
@@ -111,33 +146,36 @@ class StatsLogger:
         self._dir = Path(config.STATS_DIR)
         self._dir.mkdir(parents=True, exist_ok=True)
 
-    def save(self, stats, elapsed: float) -> Path:
+    def save(self, stats, elapsed: float, exercise: str = "squat") -> Path:
         """Write session stats to a timestamped CSV file.
 
         Args:
-            stats:   SessionStats object from the counter.
-            elapsed: Total session duration in seconds.
+            stats:    SessionStats object from the counter.
+            elapsed:  Total session duration in seconds.
+            exercise: Exercise key ("squat" or "pushup").
 
         Returns:
             Path of the written file.
         """
         ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = self._dir / f"session_{ts}.csv"
+        path = self._dir / f"{exercise}_session_{ts}.csv"
 
+        meta = _EXERCISE_META[exercise]
         rows = [
             ["Metric", "Value"],
-            ["Date",          datetime.datetime.now().strftime("%Y-%m-%d %H:%M")],
-            ["Total Reps",    stats.total_reps],
-            ["Sets Completed",stats.sets_completed],
-            ["Duration (s)",  f"{elapsed:.1f}"],
-            ["Avg Depth (°)", f"{stats.average_depth:.1f}"],
+            ["Exercise",        meta["name"]],
+            ["Date",            datetime.datetime.now().strftime("%Y-%m-%d %H:%M")],
+            ["Total Reps",      stats.total_reps],
+            ["Sets Completed",  stats.sets_completed],
+            ["Duration (s)",    f"{elapsed:.1f}"],
+            [f"Avg {meta['angle_label']} Angle (°)", f"{stats.average_depth:.1f}"],
             ["Fastest Rep (s)", f"{stats.fastest_rep:.2f}"],
             ["Slowest Rep (s)", f"{stats.slowest_rep:.2f}"],
-            ["Calories",       f"{stats.calories:.1f}"],
+            ["Calories",        f"{stats.calories:.1f}"],
         ]
         # Rep-by-rep breakdown
         rows.append([])
-        rows.append(["Rep #", "Duration (s)", "Min Angle (°)"])
+        rows.append(["Rep #", "Duration (s)", f"Min {meta['angle_label']} Angle (°)"])
         for i, (dur, depth) in enumerate(
             zip(stats.rep_durations, stats.depths), start=1
         ):
@@ -153,16 +191,21 @@ class StatsLogger:
 # Main application class
 # ---------------------------------------------------------------------------
 
-class SquatTrackerApp:
-    """Orchestrates the full squat-tracking session.
+class FitnessTrackerApp:
+    """Orchestrates the full fitness-tracking session.
 
-    Handles:
-        * Video capture initialisation
-        * Frame processing pipeline
-        * Keyboard shortcuts
-        * Audio feedback timing
-        * Screenshot / optional recording
-        * CSV export at session end
+    Supports multiple exercises (Squat, Push-Up) with live switching via
+    the E key.  All subsystems (detection, counting, UI, audio, logging)
+    are shared; only the active counter swaps out on exercise change.
+
+    Keyboard shortcuts
+    ~~~~~~~~~~~~~~~~~~
+        Space  → Pause / Resume
+        R      → Reset session
+        E      → Cycle exercise
+        S      → Screenshot
+        V      → Toggle recording
+        Q/Esc  → Quit
     """
 
     # ------------------------------------------------------------------
@@ -172,13 +215,17 @@ class SquatTrackerApp:
     def __init__(self) -> None:
         """Initialise all subsystems."""
         self._detector = PoseDetector()
-        self._counter  = SquatCounter()
         self._renderer = UIRenderer()
         self._audio    = AudioFeedback()
         self._logger   = StatsLogger()
 
         # Capture
         self._cap: Optional[cv2.VideoCapture] = None
+
+        # Exercise state
+        self._exercise_idx = 0                         # Index into _EXERCISE_CYCLE
+        self._exercise_key = _EXERCISE_CYCLE[0]        # "squat" | "pushup"
+        self._counter      = self._build_counter()
 
         # Application state
         self._paused    = False
@@ -199,12 +246,45 @@ class SquatTrackerApp:
         self._last_spoken_rep  = 0
         self._set_complete_spoken = False
 
-        # Screenshot dir
+        # Dirs
         Path("screenshots").mkdir(exist_ok=True)
-
-        # Recording dir
         if config.ENABLE_RECORDING:
             Path(config.RECORDING_DIR).mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Exercise management
+    # ------------------------------------------------------------------
+
+    def _build_counter(self):
+        """Create and return the counter for the current exercise."""
+        if self._exercise_key == "squat":
+            return SquatCounter()
+        return PushUpCounter()
+
+    def _switch_exercise(self) -> None:
+        """Cycle to the next exercise and reset everything."""
+        # Save stats for the exercise being left if it has reps
+        stats = self._counter.stats
+        if config.SAVE_STATS_CSV and stats.total_reps > 0:
+            path = self._logger.save(stats, stats.elapsed_seconds, self._exercise_key)
+            print(f"[INFO] Stats for {self._exercise_key} saved to {path}")
+
+        self._exercise_idx  = (self._exercise_idx + 1) % len(_EXERCISE_CYCLE)
+        self._exercise_key  = _EXERCISE_CYCLE[self._exercise_idx]
+        self._counter       = self._build_counter()
+        self._last_spoken_rep     = 0
+        self._set_complete_spoken = False
+        self._paused              = False
+        self._in_countdown        = True
+        self._countdown_start     = time.time()
+
+        meta = _EXERCISE_META[self._exercise_key]
+        self._audio.say(f"Switching to {meta['name']}. Get ready.")
+        print(f"[INFO] Exercise switched to: {meta['name']}")
+
+    # ------------------------------------------------------------------
+    # Main loop
+    # ------------------------------------------------------------------
 
     def run(self) -> None:
         """Open the webcam and start the main processing loop."""
@@ -217,13 +297,15 @@ class SquatTrackerApp:
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
         self._cap.set(cv2.CAP_PROP_FPS,          config.TARGET_FPS)
 
-        cv2.namedWindow("Squat Tracker", cv2.WINDOW_NORMAL)
-        cv2.resizeWindow("Squat Tracker", config.FRAME_WIDTH, config.FRAME_HEIGHT)
+        title = "AI Fitness Tracker"
+        cv2.namedWindow(title, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(title, config.FRAME_WIDTH, config.FRAME_HEIGHT)
 
         self._countdown_start = time.time()
-
-        # Announce startup
-        self._audio.say(f"Get ready. Workout starts in {config.COUNTDOWN_SECONDS}.")
+        meta = _EXERCISE_META[self._exercise_key]
+        self._audio.say(
+            f"Get ready. {meta['name']} workout starts in {config.COUNTDOWN_SECONDS}."
+        )
 
         try:
             while self._running:
@@ -238,9 +320,7 @@ class SquatTrackerApp:
                 key = cv2.waitKey(1) & 0xFF
                 self._handle_key(key, frame)
 
-                if not cv2.getWindowProperty(
-                    "Squat Tracker", cv2.WND_PROP_VISIBLE
-                ):
+                if not cv2.getWindowProperty(title, cv2.WND_PROP_VISIBLE):
                     break
         finally:
             self._shutdown()
@@ -255,9 +335,10 @@ class SquatTrackerApp:
         Args:
             frame: Raw BGR frame from the webcam.
         """
-        now  = time.time()
-        fps  = self._compute_fps(now)
+        now   = time.time()
+        fps   = self._compute_fps(now)
         stats = self._counter.stats
+        meta  = _EXERCISE_META[self._exercise_key]
 
         # ---- Countdown phase ----------------------------------------
         countdown_val = 0
@@ -276,10 +357,10 @@ class SquatTrackerApp:
         # ---- Exercise counting (skip during countdown/pause) ---------
         rep_result: Optional[RepResult] = None
         form_issue = FormIssue.NONE
-        knee_angle = 0.0
+        current_angle = 0.0
 
         if not self._paused and not self._in_countdown and not stats.workout_complete:
-            rep_result, form_issue, knee_angle = self._counter.process_frame(
+            rep_result, form_issue, current_angle = self._counter.process_frame(
                 joints, frame.shape[:2]
             )
             self._dispatch_audio(rep_result, form_issue, stats)
@@ -290,11 +371,11 @@ class SquatTrackerApp:
             total_reps       = stats.total_reps,
             current_set      = stats.current_set,
             sets_completed   = stats.sets_completed,
-            target_reps      = config.TARGET_REPS,
-            target_sets      = config.TARGET_SETS,
+            target_reps      = meta["target_reps"],
+            target_sets      = meta["target_sets"],
             coaching_msg     = self._counter.coaching_message,
             form_issue       = form_issue.value,
-            knee_angle       = knee_angle,
+            knee_angle       = current_angle,
             depth_progress   = self._counter.depth_progress,
             elapsed_seconds  = stats.elapsed_seconds,
             fps              = fps,
@@ -305,6 +386,8 @@ class SquatTrackerApp:
             fastest_rep      = stats.fastest_rep,
             slowest_rep      = stats.slowest_rep,
             avg_depth        = stats.average_depth,
+            exercise_name    = meta["name"],
+            angle_label      = meta["angle_label"],
         )
 
         # ---- Render -------------------------------------------------
@@ -314,7 +397,7 @@ class SquatTrackerApp:
         if self._writer is not None:
             self._writer.write(output)
 
-        cv2.imshow("Squat Tracker", output)
+        cv2.imshow("AI Fitness Tracker", output)
 
     # ------------------------------------------------------------------
     # Audio dispatch
@@ -339,27 +422,39 @@ class SquatTrackerApp:
                 if rep_num != self._last_spoken_rep:
                     self._last_spoken_rep = rep_num
                     self._audio.say(str(rep_num))
-                    halfway = config.TARGET_REPS // 2
-                    if rep_num % config.TARGET_REPS == halfway:
+                    meta    = _EXERCISE_META[self._exercise_key]
+                    halfway = meta["target_reps"] // 2
+                    if rep_num % meta["target_reps"] == halfway:
                         self._audio.say("Halfway there!")
             else:
-                # Bad rep feedback
+                # Bad rep feedback — covers both exercises
                 phrase = {
+                    # Squat issues
                     FormIssue.GO_LOWER:    "Go lower",
                     FormIssue.STAND_FULLY: "Stand fully",
                     FormIssue.BAD_BACK:    "Straighten your back",
                     FormIssue.KNEE_CAVE:   "Knees out",
+                    # Push-up issues
+                    FormIssue.GO_LOWER_PU: "Go lower",
+                    FormIssue.LOCK_ARMS:   "Lock out your arms",
+                    FormIssue.STRAIGHTEN:  "Straighten your body",
+                    FormIssue.HIPS_UP:     "Keep your hips up",
+                    FormIssue.HIPS_DOWN:   "Lower your hips",
+                    FormIssue.MOVE_SIDEWAYS: "Move sideways",
                 }.get(rep_result.form_issue, "Bad form")
                 self._audio.say(phrase)
 
         # Set completion announcement
+        meta = _EXERCISE_META[self._exercise_key]
         if (stats.sets_completed > 0
                 and stats.reps_in_current_set == 0
                 and not self._set_complete_spoken):
             if stats.workout_complete:
-                self._audio.say("Workout complete. Great job!")
+                self._audio.say(f"{meta['name']} workout complete. Great job!")
                 if config.SAVE_STATS_CSV:
-                    path = self._logger.save(stats, stats.elapsed_seconds)
+                    path = self._logger.save(
+                        stats, stats.elapsed_seconds, self._exercise_key
+                    )
                     print(f"[INFO] Stats saved to {path}")
             else:
                 self._audio.say(f"Set {stats.sets_completed} complete. Rest up!")
@@ -377,6 +472,15 @@ class SquatTrackerApp:
         Args:
             key:   Key code from cv2.waitKey.
             frame: Current (unrendered) frame, used for screenshot.
+
+        Shortcuts
+        ---------
+        Space  Pause / Resume
+        R      Reset session
+        E      Switch exercise
+        S      Screenshot
+        V      Toggle recording
+        Q/Esc  Quit
         """
         if key == ord("q") or key == 27:       # Q or Escape → quit
             self._running = False
@@ -391,6 +495,8 @@ class SquatTrackerApp:
             self._last_spoken_rep = 0
             self._paused          = False
             self._audio.say("Session reset. Get ready.")
+        elif key == ord("e"):                   # E → switch exercise
+            self._switch_exercise()
         elif key == ord("s"):                   # S → screenshot
             self._take_screenshot()
         elif key == ord("v"):                   # V → toggle recording
@@ -420,7 +526,7 @@ class SquatTrackerApp:
     def _take_screenshot(self) -> None:
         """Save the current frame as a PNG file in the screenshots folder."""
         ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = f"screenshots/squat_{ts}.png"
+        path = f"screenshots/{self._exercise_key}_{ts}.png"
         if self._cap and self._cap.isOpened():
             ok, frame = self._cap.read()
             if ok:
@@ -455,7 +561,7 @@ class SquatTrackerApp:
         # Save stats if session has any reps
         stats = self._counter.stats
         if config.SAVE_STATS_CSV and stats.total_reps > 0:
-            path = self._logger.save(stats, stats.elapsed_seconds)
+            path = self._logger.save(stats, stats.elapsed_seconds, self._exercise_key)
             print(f"[INFO] Final stats saved to {path}")
 
         cv2.destroyAllWindows()
@@ -467,5 +573,5 @@ class SquatTrackerApp:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    app = SquatTrackerApp()
+    app = FitnessTrackerApp()
     app.run()

@@ -1,8 +1,10 @@
 """
 config.py
 ---------
-Central configuration for the Squat Tracker application.
+Central configuration for the AI Fitness Tracker application.
 Modify values here to change application behaviour without touching any other file.
+
+Supported exercises: Squats, Push-ups  (more via ExerciseBase subclasses)
 """
 
 # ---------------------------------------------------------------------------
@@ -78,10 +80,32 @@ ENABLE_RECORDING: bool = False     # Set True to save session video
 RECORDING_DIR: str = "recordings"
 
 # ---------------------------------------------------------------------------
+# Push-up angle thresholds (degrees)  ← relaxed for easier detection
+# ---------------------------------------------------------------------------
+PUSHUP_TOP_ANGLE: float    = 155.0   # Elbow angle considered "arms locked out" at top  (was 165)
+PUSHUP_BOTTOM_ANGLE: float = 100.0   # Elbow angle qualifying as proper depth at bottom  (was 85)
+PUSHUP_LOWER_LIMIT: float  = 125.0   # Angle below top but not yet at proper bottom      (was 110)
+PUSHUP_FULL_EXT_ANGLE: float = 140.0 # Minimum elbow angle to count as "arms extended"  (was 155)
+
+# ---------------------------------------------------------------------------
+# Push-up form validation thresholds  ← relaxed for easier detection
+# ---------------------------------------------------------------------------
+PUSHUP_HIP_SAG_THRESHOLD: float = 0.14   # Hip sag relative to shoulder-ankle line  (was 0.06)
+PUSHUP_PIKE_THRESHOLD: float    = 0.16   # Excessive hip raise ("pike" position)     (was 0.08)
+PUSHUP_SIDE_VIEW_THRESHOLD: float = 0.10  # Shoulder-vs-elbow depth for side-view    (was 0.12)
+
+# ---------------------------------------------------------------------------
+# Push-up workout targets
+# ---------------------------------------------------------------------------
+TARGET_PUSHUPS: int = 20            # Reps per set
+TARGET_PUSHUP_SETS: int = 3         # Total sets
+
+# ---------------------------------------------------------------------------
 # Calories estimate
 # ---------------------------------------------------------------------------
 USER_WEIGHT_KG: float = 70.0       # Default user weight for calorie estimate
-CALORIES_PER_SQUAT: float = 0.32   # Approximate kcal per squat rep
+CALORIES_PER_SQUAT: float  = 0.32  # Approximate kcal per squat rep
+CALORIES_PER_PUSHUP: float = 0.29  # Approximate kcal per push-up rep
 
 # ---------------------------------------------------------------------------
 # Colour palette  (BGR for OpenCV)

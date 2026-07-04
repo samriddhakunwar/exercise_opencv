@@ -1,15 +1,17 @@
 """
 squat_counter.py
 ----------------
-Finite-state-machine squat counter with form validation.
+Shared base infrastructure and Squat counter.
 
 Architecture note
 ~~~~~~~~~~~~~~~~~
 ExerciseBase  ← abstract base class for all exercises
-    └── SquatCounter  ← concrete implementation
+    ├── SquatCounter    ← knee-angle FSM  (this file)
+    ├── PushUpCounter   ← elbow-angle FSM (pushup_counter.py)
+    └── (LungeCounter, CurlCounter, PlankCounter … stubs ready for extension)
 
-New exercises (PushUpCounter, LungeCounter, etc.) should inherit from
-ExerciseBase and implement the abstract methods.
+New exercises should inherit from ExerciseBase and implement
+``process_frame``, ``reset``, and (optionally) ``depth_progress``.
 """
 
 from __future__ import annotations
@@ -35,14 +37,22 @@ from angle_utils import (
 # ---------------------------------------------------------------------------
 
 class FormIssue(str, enum.Enum):
-    """Enumeration of detectable form problems."""
+    """Enumeration of detectable form problems (shared across all exercises)."""
     NONE           = ""
+    # Squat-specific
     GO_LOWER       = "GO LOWER"
     STAND_FULLY    = "STAND FULLY"
     BAD_BACK       = "STRAIGHTEN YOUR BACK"
     KNEE_CAVE      = "KNEES OUT!"
     FACE_SIDEWAYS  = "TURN SIDEWAYS"
     BODY_NOT_FOUND = "STEP INTO FRAME"
+    # Push-up-specific
+    LOCK_ARMS      = "LOCK OUT YOUR ARMS"
+    GO_LOWER_PU    = "GO LOWER"
+    STRAIGHTEN     = "STRAIGHTEN YOUR BODY"
+    HIPS_UP        = "KEEP YOUR HIPS UP"
+    HIPS_DOWN      = "LOWER YOUR HIPS"
+    MOVE_SIDEWAYS  = "MOVE SIDEWAYS"
 
 
 class SquatState(str, enum.Enum):
@@ -91,6 +101,27 @@ class SessionStats:
     depths:          List[float] = field(default_factory=list)
     start_time:      float = field(default_factory=time.time)
     calories:        float = 0.0
+    # Runtime targets — set via configure() by each exercise
+    _target_reps:    int   = field(default=config.TARGET_REPS, repr=False)
+    _target_sets:    int   = field(default=config.TARGET_SETS, repr=False)
+
+    # ------------------------------------------------------------------
+    # Configuration
+    # ------------------------------------------------------------------
+
+    def configure(self, target_reps: int, target_sets: int) -> None:
+        """Set exercise-specific workout targets.
+
+        Must be called once during exercise __init__ so that the
+        derived properties (reps_in_current_set, workout_complete)
+        use the correct values for the active exercise.
+
+        Args:
+            target_reps: Number of reps per set.
+            target_sets: Total sets to complete.
+        """
+        self._target_reps = target_reps
+        self._target_sets = target_sets
 
     # ------------------------------------------------------------------
     # Derived properties
@@ -104,11 +135,11 @@ class SessionStats:
     @property
     def reps_in_current_set(self) -> int:
         """Reps completed in the current (active) set."""
-        return self.total_reps - self.sets_completed * config.TARGET_REPS
+        return self.total_reps - self.sets_completed * self._target_reps
 
     @property
     def average_depth(self) -> float:
-        """Average minimum knee angle across all accepted reps."""
+        """Average minimum angle across all accepted reps."""
         return sum(self.depths) / len(self.depths) if self.depths else 0.0
 
     @property
@@ -124,7 +155,7 @@ class SessionStats:
     @property
     def workout_complete(self) -> bool:
         """True when all target sets have been completed."""
-        return self.sets_completed >= config.TARGET_SETS
+        return self.sets_completed >= self._target_sets
 
 
 # ---------------------------------------------------------------------------
@@ -139,10 +170,20 @@ class ExerciseBase(ABC):
     here so subclasses can share the infrastructure.
     """
 
+    # Subclasses should override these class-level defaults
+    TARGET_REPS: int = config.TARGET_REPS
+    TARGET_SETS: int = config.TARGET_SETS
+    CALORIES_PER_REP: float = config.CALORIES_PER_SQUAT
+
     def __init__(self) -> None:
         """Initialise base state."""
         self.stats  = SessionStats()
+        self.stats.configure(self.TARGET_REPS, self.TARGET_SETS)
         self._state = SquatState.IDLE
+        # Depth progress (0-1) used by the progress bar
+        self.depth_progress: float = 0.0
+        # Live coaching text
+        self.coaching_message: str = "GET READY"
 
     @abstractmethod
     def process_frame(
@@ -167,9 +208,34 @@ class ExerciseBase(ABC):
         ...
 
     @property
-    def state(self) -> SquatState:
-        """Current FSM state."""
+    def state(self):
+        """Current FSM state (SquatState or PushUpState)."""
         return self._state
+
+    def _accept_rep(
+        self,
+        duration: float,
+        angle: float,
+        calories_per_rep: float,
+        target_reps: int,
+        target_sets: int,
+    ) -> None:
+        """Increment stats for an accepted rep and handle set transitions.
+
+        Args:
+            duration:         Rep duration in seconds.
+            angle:            Primary angle metric for this rep (min elbow angle, etc.).
+            calories_per_rep: Calories burned per rep.
+            target_reps:      Reps per set.
+            target_sets:      Total sets (unused here — kept for symmetry).
+        """
+        self.stats.total_reps     += 1
+        self.stats.rep_durations.append(duration)
+        self.stats.depths.append(angle)
+        self.stats.calories = self.stats.total_reps * calories_per_rep
+        if self.stats.reps_in_current_set >= target_reps:
+            self.stats.sets_completed += 1
+            self.stats.current_set    += 1
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +251,10 @@ class SquatCounter(ExerciseBase):
     Form is validated at the BOTTOM and STANDING transitions; bad reps
     are not counted.
     """
+
+    TARGET_REPS       = config.TARGET_REPS
+    TARGET_SETS       = config.TARGET_SETS
+    CALORIES_PER_REP  = config.CALORIES_PER_SQUAT
 
     def __init__(self) -> None:
         """Initialise the counter, smoother, and all tracking fields."""
@@ -203,9 +273,6 @@ class SquatCounter(ExerciseBase):
 
         # Guard flag: prevents double-counting while at bottom
         self._counted_this_rep: bool = False
-
-        # Depth-progress value for the progress bar (0-1)
-        self.depth_progress: float = 0.0
 
         # Coaching message for the current rep
         self.coaching_message: str = "GET READY"
@@ -327,6 +394,7 @@ class SquatCounter(ExerciseBase):
     def reset(self) -> None:
         """Reset all counters, stats, and FSM state."""
         self.stats             = SessionStats()
+        self.stats.configure(config.TARGET_REPS, config.TARGET_SETS)
         self._state            = SquatState.STANDING
         self._rep_start_time   = None
         self._rep_min_angle    = 180.0
@@ -364,17 +432,13 @@ class SquatCounter(ExerciseBase):
         counted = (issue == FormIssue.NONE)
 
         if counted:
-            self.stats.total_reps    += 1
-            self.stats.rep_durations.append(duration)
-            self.stats.depths.append(min_angle)
-            self.stats.calories       = self.stats.total_reps * config.CALORIES_PER_SQUAT
-            self.coaching_message     = "GOOD REP! ✓"
-
-            # Check set completion
-            if self.stats.reps_in_current_set >= config.TARGET_REPS:
-                self.stats.sets_completed += 1
-                self.stats.current_set    += 1
-                self.coaching_message      = "SET COMPLETE!"
+            self._accept_rep(
+                duration, min_angle, config.CALORIES_PER_SQUAT,
+                config.TARGET_REPS, config.TARGET_SETS,
+            )
+            self.coaching_message = "GOOD REP! ✓"
+            if self.stats.reps_in_current_set == 0 and self.stats.sets_completed > 0:
+                self.coaching_message = "SET COMPLETE!"
         else:
             self.coaching_message = f"BAD REP — {issue.value}"
 
@@ -403,18 +467,8 @@ class SquatCounter(ExerciseBase):
 
 
 # ---------------------------------------------------------------------------
-# Stub classes — extend these for future exercises
+# Stub classes  — extend these for future exercises
 # ---------------------------------------------------------------------------
-
-class PushUpCounter(ExerciseBase):
-    """Placeholder for push-up counting (not yet implemented)."""
-
-    def process_frame(self, joints, frame_shape):  # type: ignore[override]
-        raise NotImplementedError
-
-    def reset(self) -> None:
-        self.stats = SessionStats()
-
 
 class LungeCounter(ExerciseBase):
     """Placeholder for lunge counting (not yet implemented)."""
@@ -424,6 +478,7 @@ class LungeCounter(ExerciseBase):
 
     def reset(self) -> None:
         self.stats = SessionStats()
+        self.stats.configure(self.TARGET_REPS, self.TARGET_SETS)
 
 
 class CurlCounter(ExerciseBase):
@@ -434,6 +489,7 @@ class CurlCounter(ExerciseBase):
 
     def reset(self) -> None:
         self.stats = SessionStats()
+        self.stats.configure(self.TARGET_REPS, self.TARGET_SETS)
 
 
 class PlankCounter(ExerciseBase):
@@ -444,6 +500,7 @@ class PlankCounter(ExerciseBase):
 
     def reset(self) -> None:
         self.stats = SessionStats()
+        self.stats.configure(self.TARGET_REPS, self.TARGET_SETS)
 
 
 class JumpingJackCounter(ExerciseBase):
@@ -454,3 +511,4 @@ class JumpingJackCounter(ExerciseBase):
 
     def reset(self) -> None:
         self.stats = SessionStats()
+        self.stats.configure(self.TARGET_REPS, self.TARGET_SETS)

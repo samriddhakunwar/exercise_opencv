@@ -138,6 +138,9 @@ class RenderData:
     fastest_rep:      float = 0.0
     slowest_rep:      float = 0.0
     avg_depth:        float = 0.0
+    # Exercise identity
+    exercise_name:    str   = "SQUAT"   # "SQUAT" or "PUSH-UP"
+    angle_label:      str   = "Knee"    # label shown next to the live angle
 
 
 # ---------------------------------------------------------------------------
@@ -205,8 +208,9 @@ class UIRenderer:
         _alpha_rect(frame, pad, pad, pad + w_box, pad + h_box,
                     config.COLOR_SEMI_BG, alpha=0.72)
 
-        # Title
-        _draw_text_shadow(frame, "SQUAT TRACKER",
+        # Title — exercise specific
+        title = f"{data.exercise_name} TRACKER"
+        _draw_text_shadow(frame, title,
                           (pad + 12, pad + 32), 0.55, config.COLOR_ACCENT, 1)
 
         # Separator line
@@ -306,9 +310,9 @@ class UIRenderer:
                               (self._w // 2 - fw // 2, self._h - 18),
                               0.55, fps_col, 1)
 
-        # Knee angle
+        # Angle readout — label depends on exercise
         if config.SHOW_ANGLE:
-            ang_str = f"Knee: {data.knee_angle:.1f}°"
+            ang_str = f"{data.angle_label}: {data.knee_angle:.1f}°"
             aw, _   = _text_size(ang_str, 0.60, 1)
             _draw_text_shadow(frame, ang_str,
                               (self._w - aw - 18, self._h - 18),
@@ -403,7 +407,7 @@ class UIRenderer:
                           (self._w // 2 - nw // 2, self._h // 2 + nh // 2),
                           scale, col, 8, shadow_offset=6)  # type: ignore[arg-type]
 
-        ready = "GET READY TO SQUAT"
+        ready = f"GET READY TO {data.exercise_name.upper()}"
         rw, _ = _text_size(ready, 0.9, 2)
         _draw_text_shadow(frame, ready,
                           (self._w // 2 - rw // 2, self._h // 4),
@@ -418,8 +422,8 @@ class UIRenderer:
 
         cx = self._w // 2
 
-        # Title
-        title = "WORKOUT COMPLETE!"
+        # Title — exercise specific
+        title = f"{data.exercise_name} COMPLETE!"
         tw, _ = _text_size(title, 2.0, 3)
         _draw_text_shadow(frame, title, (cx - tw // 2, 100), 2.0, config.COLOR_GREEN, 3)
 
@@ -434,7 +438,7 @@ class UIRenderer:
             ("Total Reps",      str(data.total_reps),          config.COLOR_GREEN),
             ("Sets Completed",  f"{data.sets_completed} / {data.target_sets}", config.COLOR_WHITE),
             ("Duration",        _fmt_time(data.elapsed_seconds), config.COLOR_WHITE),
-            ("Avg Depth",       f"{data.avg_depth:.1f}°",       config.COLOR_ORANGE),
+            (f"Avg {data.angle_label} Angle", f"{data.avg_depth:.1f}°", config.COLOR_ORANGE),
             ("Fastest Rep",     f"{data.fastest_rep:.2f}s",     config.COLOR_GREEN),
             ("Slowest Rep",     f"{data.slowest_rep:.2f}s",     config.COLOR_RED),
             ("Calories Burned", f"{data.calories:.1f} kcal",    config.COLOR_YELLOW),
@@ -459,7 +463,7 @@ class UIRenderer:
 
     def _render_hotkey_hint(self, frame: np.ndarray) -> None:
         """Small hotkey reference in the bottom-left area."""
-        hints = "SPACE=Pause  R=Reset  Q=Quit  S=Screenshot"
+        hints = "SPACE=Pause  R=Reset  E=Exercise  Q=Quit  S=Screenshot"
         hw, _ = _text_size(hints, 0.42, 1)
         _draw_text_shadow(frame, hints,
                           (self._w // 2 - hw // 2, self._h - 68),

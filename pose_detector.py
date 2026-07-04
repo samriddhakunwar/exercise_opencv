@@ -36,28 +36,40 @@ class JointData:
     """Container for key joint positions (normalised 0-1 coords).
 
     Attributes:
-        left_shoulder:  (x, y) left shoulder.
-        right_shoulder: (x, y) right shoulder.
-        left_hip:       (x, y) left hip.
-        right_hip:      (x, y) right hip.
-        left_knee:      (x, y) left knee.
-        right_knee:     (x, y) right knee.
-        left_ankle:     (x, y) left ankle.
-        right_ankle:    (x, y) right ankle.
-        left_visibility:  Visibility score for the left leg chain.
-        right_visibility: Visibility score for the right leg chain.
+        left_shoulder:   (x, y) left shoulder.
+        right_shoulder:  (x, y) right shoulder.
+        left_elbow:      (x, y) left elbow.
+        right_elbow:     (x, y) right elbow.
+        left_wrist:      (x, y) left wrist.
+        right_wrist:     (x, y) right wrist.
+        left_hip:        (x, y) left hip.
+        right_hip:       (x, y) right hip.
+        left_knee:       (x, y) left knee.
+        right_knee:      (x, y) right knee.
+        left_ankle:      (x, y) left ankle.
+        right_ankle:     (x, y) right ankle.
+        left_visibility:      Visibility score for the left leg chain.
+        right_visibility:     Visibility score for the right leg chain.
+        left_arm_visibility:  Visibility score for the left arm chain.
+        right_arm_visibility: Visibility score for the right arm chain.
     """
-    left_shoulder:    Tuple[float, float] = (0.0, 0.0)
-    right_shoulder:   Tuple[float, float] = (0.0, 0.0)
-    left_hip:         Tuple[float, float] = (0.0, 0.0)
-    right_hip:        Tuple[float, float] = (0.0, 0.0)
-    left_knee:        Tuple[float, float] = (0.0, 0.0)
-    right_knee:       Tuple[float, float] = (0.0, 0.0)
-    left_ankle:       Tuple[float, float] = (0.0, 0.0)
-    right_ankle:      Tuple[float, float] = (0.0, 0.0)
-    left_visibility:  float = 0.0
-    right_visibility: float = 0.0
-    raw_landmarks:    Optional[object] = field(default=None, repr=False)
+    left_shoulder:        Tuple[float, float] = (0.0, 0.0)
+    right_shoulder:       Tuple[float, float] = (0.0, 0.0)
+    left_elbow:           Tuple[float, float] = (0.0, 0.0)
+    right_elbow:          Tuple[float, float] = (0.0, 0.0)
+    left_wrist:           Tuple[float, float] = (0.0, 0.0)
+    right_wrist:          Tuple[float, float] = (0.0, 0.0)
+    left_hip:             Tuple[float, float] = (0.0, 0.0)
+    right_hip:            Tuple[float, float] = (0.0, 0.0)
+    left_knee:            Tuple[float, float] = (0.0, 0.0)
+    right_knee:           Tuple[float, float] = (0.0, 0.0)
+    left_ankle:           Tuple[float, float] = (0.0, 0.0)
+    right_ankle:          Tuple[float, float] = (0.0, 0.0)
+    left_visibility:      float = 0.0
+    right_visibility:     float = 0.0
+    left_arm_visibility:  float = 0.0
+    right_arm_visibility: float = 0.0
+    raw_landmarks:        Optional[object] = field(default=None, repr=False)
 
 
 class PoseDetector:
@@ -201,16 +213,30 @@ class PoseDetector:
         left_vis  = min(vis(_LM.LEFT_HIP),  vis(_LM.LEFT_KNEE),  vis(_LM.LEFT_ANKLE))
         right_vis = min(vis(_LM.RIGHT_HIP), vis(_LM.RIGHT_KNEE), vis(_LM.RIGHT_ANKLE))
 
+        # Arm visibility — used by PushUpCounter
+        left_arm_vis  = min(
+            vis(_LM.LEFT_SHOULDER), vis(_LM.LEFT_ELBOW), vis(_LM.LEFT_WRIST)
+        )
+        right_arm_vis = min(
+            vis(_LM.RIGHT_SHOULDER), vis(_LM.RIGHT_ELBOW), vis(_LM.RIGHT_WRIST)
+        )
+
         return JointData(
-            left_shoulder  = lm(_LM.LEFT_SHOULDER),
-            right_shoulder = lm(_LM.RIGHT_SHOULDER),
-            left_hip       = lm(_LM.LEFT_HIP),
-            right_hip      = lm(_LM.RIGHT_HIP),
-            left_knee      = lm(_LM.LEFT_KNEE),
-            right_knee     = lm(_LM.RIGHT_KNEE),
-            left_ankle     = lm(_LM.LEFT_ANKLE),
-            right_ankle    = lm(_LM.RIGHT_ANKLE),
-            left_visibility  = left_vis,
-            right_visibility = right_vis,
-            raw_landmarks    = landmarks,
+            left_shoulder        = lm(_LM.LEFT_SHOULDER),
+            right_shoulder       = lm(_LM.RIGHT_SHOULDER),
+            left_elbow           = lm(_LM.LEFT_ELBOW),
+            right_elbow          = lm(_LM.RIGHT_ELBOW),
+            left_wrist           = lm(_LM.LEFT_WRIST),
+            right_wrist          = lm(_LM.RIGHT_WRIST),
+            left_hip             = lm(_LM.LEFT_HIP),
+            right_hip            = lm(_LM.RIGHT_HIP),
+            left_knee            = lm(_LM.LEFT_KNEE),
+            right_knee           = lm(_LM.RIGHT_KNEE),
+            left_ankle           = lm(_LM.LEFT_ANKLE),
+            right_ankle          = lm(_LM.RIGHT_ANKLE),
+            left_visibility      = left_vis,
+            right_visibility     = right_vis,
+            left_arm_visibility  = left_arm_vis,
+            right_arm_visibility = right_arm_vis,
+            raw_landmarks        = landmarks,
         )
