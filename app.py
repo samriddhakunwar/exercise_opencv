@@ -15,7 +15,7 @@ Keyboard shortcuts
 ~~~~~~~~~~~~~~~~~~
     Space  → Pause / Resume
     R      → Reset current session
-    E      → Switch exercise (Squat ↔ Push-Up)
+    E      → Switch exercise (Squat → Push-Up → High Knees)
     S      → Save screenshot
     V      → Toggle video recording
     Q / Esc→ Quit
@@ -43,6 +43,7 @@ import config
 from pose_detector import PoseDetector
 from squat_counter import SquatCounter, FormIssue, RepResult
 from pushup_counter import PushUpCounter
+from high_knee_counter import HighKneeCounter, HighKneeMode
 from ui import UIRenderer, RenderData
 
 # ---------------------------------------------------------------------------
@@ -59,7 +60,7 @@ except ImportError:
 # Exercise registry
 # ---------------------------------------------------------------------------
 
-_EXERCISE_CYCLE = ["squat", "pushup"]
+_EXERCISE_CYCLE = ["squat", "pushup", "highknee"]
 
 _EXERCISE_META = {
     "squat": {
@@ -67,12 +68,21 @@ _EXERCISE_META = {
         "angle_label": "Knee",
         "target_reps": config.TARGET_REPS,
         "target_sets": config.TARGET_SETS,
+        "bar_label":   "DEPTH",
     },
     "pushup": {
         "name":        "PUSH-UP",
         "angle_label": "Elbow",
         "target_reps": config.TARGET_PUSHUPS,
         "target_sets": config.TARGET_PUSHUP_SETS,
+        "bar_label":   "DEPTH",
+    },
+    "highknee": {
+        "name":        "HIGH KNEES",
+        "angle_label": "Knee Ht",
+        "target_reps": config.HIGH_KNEE_TARGET_REPS,
+        "target_sets": config.HIGH_KNEE_TARGET_SETS,
+        "bar_label":   "HEIGHT",
     },
 }
 
@@ -146,13 +156,20 @@ class StatsLogger:
         self._dir = Path(config.STATS_DIR)
         self._dir.mkdir(parents=True, exist_ok=True)
 
-    def save(self, stats, elapsed: float, exercise: str = "squat") -> Path:
+    def save(
+        self,
+        stats,
+        elapsed: float,
+        exercise: str = "squat",
+        extra=None,
+    ) -> Path:
         """Write session stats to a timestamped CSV file.
 
         Args:
             stats:    SessionStats object from the counter.
             elapsed:  Total session duration in seconds.
-            exercise: Exercise key ("squat" or "pushup").
+            exercise: Exercise key ("squat", "pushup", or "highknee").
+            extra:    Optional HighKneeCounter for additional pace stats.
 
         Returns:
             Path of the written file.
@@ -168,18 +185,29 @@ class StatsLogger:
             ["Total Reps",      stats.total_reps],
             ["Sets Completed",  stats.sets_completed],
             ["Duration (s)",    f"{elapsed:.1f}"],
-            [f"Avg {meta['angle_label']} Angle (°)", f"{stats.average_depth:.1f}"],
-            ["Fastest Rep (s)", f"{stats.fastest_rep:.2f}"],
-            ["Slowest Rep (s)", f"{stats.slowest_rep:.2f}"],
             ["Calories",        f"{stats.calories:.1f}"],
         ]
+        if exercise == "highknee" and extra is not None:
+            rows += [
+                ["Total Lifts",    extra.total_lifts],
+                ["Avg Knee Height", f"{extra.avg_knee_height * 100:.0f}%"],
+                ["Max Knee Height", f"{extra.max_knee_height * 100:.0f}%"],
+                ["Avg Pace (spm)", f"{extra.average_pace:.1f}"],
+                ["Peak Pace (spm)", f"{extra.fastest_pace:.1f}"],
+            ]
+        else:
+            rows += [
+                [f"Avg {meta['angle_label']} Angle (°)", f"{stats.average_depth:.1f}"],
+                ["Fastest Rep (s)", f"{stats.fastest_rep:.2f}"],
+                ["Slowest Rep (s)", f"{stats.slowest_rep:.2f}"],
+            ]
         # Rep-by-rep breakdown
         rows.append([])
         rows.append(["Rep #", "Duration (s)", f"Min {meta['angle_label']} Angle (°)"])
         for i, (dur, depth) in enumerate(
             zip(stats.rep_durations, stats.depths), start=1
         ):
-            rows.append([i, f"{dur:.2f}", f"{depth:.1f}"])
+            rows.append([i, f"{dur:.2f}", f"{depth:.3f}"])
 
         with open(path, "w", newline="") as f:
             csv.writer(f).writerows(rows)
@@ -259,14 +287,23 @@ class FitnessTrackerApp:
         """Create and return the counter for the current exercise."""
         if self._exercise_key == "squat":
             return SquatCounter()
-        return PushUpCounter()
+        if self._exercise_key == "pushup":
+            return PushUpCounter()
+        # High Knee — default to Rep mode
+        counter = HighKneeCounter(mode=HighKneeMode.REP)
+        return counter
 
     def _switch_exercise(self) -> None:
         """Cycle to the next exercise and reset everything."""
         # Save stats for the exercise being left if it has reps
-        stats = self._counter.stats
+        stats  = self._counter.stats
+        is_hk  = self._exercise_key == "highknee"
+        hk_ctr = self._counter if is_hk else None
         if config.SAVE_STATS_CSV and stats.total_reps > 0:
-            path = self._logger.save(stats, stats.elapsed_seconds, self._exercise_key)
+            path = self._logger.save(
+                stats, stats.elapsed_seconds, self._exercise_key,
+                extra=hk_ctr if isinstance(hk_ctr, HighKneeCounter) else None,
+            )
             print(f"[INFO] Stats for {self._exercise_key} saved to {path}")
 
         self._exercise_idx  = (self._exercise_idx + 1) % len(_EXERCISE_CYCLE)
@@ -329,6 +366,9 @@ class FitnessTrackerApp:
     # Core per-frame pipeline
     # ------------------------------------------------------------------
 
+    def _render_hotkey_hint(self, frame, data=None) -> None:
+        pass  # Handled by ui.py
+
     def _process_frame(self, frame: np.ndarray) -> None:
         """Run detection, counting, and rendering for a single frame.
 
@@ -351,21 +391,42 @@ class FitnessTrackerApp:
                 self._audio.say("Go!")
                 self._counter.stats.start_time = time.time()  # Reset timer
 
-        # ---- Pose detection -----------------------------------------
+        # --- Pose detection -----------------------------------------
         joints, annotated = self._detector.process(frame)
+
+        # Kick off cardio timer the moment active counting begins
+        if (
+            not self._paused
+            and not self._in_countdown
+            and self._exercise_key == "highknee"
+            and isinstance(self._counter, HighKneeCounter)
+        ):
+            self._counter.start_cardio_timer()
 
         # ---- Exercise counting (skip during countdown/pause) ---------
         rep_result: Optional[RepResult] = None
         form_issue = FormIssue.NONE
         current_angle = 0.0
 
-        if not self._paused and not self._in_countdown and not stats.workout_complete:
+        is_hk = self._exercise_key == "highknee"
+        hk = self._counter if is_hk else None
+
+        # For high knees in cardio mode treat "workout_complete" as cardio_complete
+        workout_done = (
+            hk.cardio_complete
+            if (is_hk and isinstance(hk, HighKneeCounter) and hk.mode == HighKneeMode.CARDIO)
+            else stats.workout_complete
+        )
+
+        if not self._paused and not self._in_countdown and not workout_done:
             rep_result, form_issue, current_angle = self._counter.process_frame(
                 joints, frame.shape[:2]
             )
             self._dispatch_audio(rep_result, form_issue, stats)
 
         # ---- Build render data --------------------------------------
+        is_hk    = self._exercise_key == "highknee"
+        hk_ctr   = self._counter if is_hk else None
         data = RenderData(
             reps_in_set      = stats.reps_in_current_set,
             total_reps       = stats.total_reps,
@@ -381,13 +442,29 @@ class FitnessTrackerApp:
             fps              = fps,
             is_paused        = self._paused,
             countdown        = countdown_val,
-            session_complete = stats.workout_complete,
+            session_complete = (
+                hk_ctr.cardio_complete
+                if (is_hk and isinstance(hk_ctr, HighKneeCounter) and hk_ctr.mode == HighKneeMode.CARDIO)
+                else stats.workout_complete
+            ),
             calories         = stats.calories,
             fastest_rep      = stats.fastest_rep,
             slowest_rep      = stats.slowest_rep,
-            avg_depth        = stats.average_depth,
+            avg_depth        = (
+                hk_ctr.avg_knee_height
+                if (is_hk and isinstance(hk_ctr, HighKneeCounter))
+                else stats.average_depth
+            ),
             exercise_name    = meta["name"],
             angle_label      = meta["angle_label"],
+            bar_label        = meta.get("bar_label", "DEPTH"),
+            # Pace / cardio (populated only for High Knees)
+            current_pace     = hk_ctr.current_pace     if (is_hk and isinstance(hk_ctr, HighKneeCounter)) else 0.0,
+            average_pace     = hk_ctr.average_pace     if (is_hk and isinstance(hk_ctr, HighKneeCounter)) else 0.0,
+            fastest_pace     = hk_ctr.fastest_pace     if (is_hk and isinstance(hk_ctr, HighKneeCounter)) else 0.0,
+            total_lifts      = hk_ctr.total_lifts       if (is_hk and isinstance(hk_ctr, HighKneeCounter)) else 0,
+            cardio_remaining = hk_ctr.cardio_time_remaining if (is_hk and isinstance(hk_ctr, HighKneeCounter)) else 0.0,
+            is_cardio        = (is_hk and isinstance(hk_ctr, HighKneeCounter) and hk_ctr.mode == HighKneeMode.CARDIO),
         )
 
         # ---- Render -------------------------------------------------
@@ -427,33 +504,57 @@ class FitnessTrackerApp:
                     if rep_num % meta["target_reps"] == halfway:
                         self._audio.say("Halfway there!")
             else:
-                # Bad rep feedback — covers both exercises
+                # Bad rep feedback — covers all exercises
                 phrase = {
                     # Squat issues
-                    FormIssue.GO_LOWER:    "Go lower",
-                    FormIssue.STAND_FULLY: "Stand fully",
-                    FormIssue.BAD_BACK:    "Straighten your back",
-                    FormIssue.KNEE_CAVE:   "Knees out",
+                    FormIssue.GO_LOWER:          "Go lower",
+                    FormIssue.STAND_FULLY:        "Stand fully",
+                    FormIssue.BAD_BACK:           "Straighten your back",
+                    FormIssue.KNEE_CAVE:          "Knees out",
                     # Push-up issues
-                    FormIssue.GO_LOWER_PU: "Go lower",
-                    FormIssue.LOCK_ARMS:   "Lock out your arms",
-                    FormIssue.STRAIGHTEN:  "Straighten your body",
-                    FormIssue.HIPS_UP:     "Keep your hips up",
-                    FormIssue.HIPS_DOWN:   "Lower your hips",
-                    FormIssue.MOVE_SIDEWAYS: "Move sideways",
+                    FormIssue.GO_LOWER_PU:        "Go lower",
+                    FormIssue.LOCK_ARMS:          "Lock out your arms",
+                    FormIssue.STRAIGHTEN:         "Straighten your body",
+                    FormIssue.HIPS_UP:            "Keep your hips up",
+                    FormIssue.HIPS_DOWN:          "Lower your hips",
+                    FormIssue.MOVE_SIDEWAYS:      "Move sideways",
+                    # High Knee issues
+                    FormIssue.RAISE_KNEES_HIGHER: "Lift above hip",
+                    FormIssue.ALTERNATE_LEGS:     "Alternate legs",
+                    FormIssue.MOVE_FASTER:        "Move faster",
+                    FormIssue.SLOW_DOWN:          "Slow down slightly",
                 }.get(rep_result.form_issue, "Bad form")
                 self._audio.say(phrase)
 
         # Set completion announcement
         meta = _EXERCISE_META[self._exercise_key]
-        if (stats.sets_completed > 0
-                and stats.reps_in_current_set == 0
-                and not self._set_complete_spoken):
+        is_hk = self._exercise_key == "highknee"
+        hk_ctr = self._counter if is_hk else None
+        cardio_done = (
+            isinstance(hk_ctr, HighKneeCounter) and hk_ctr.cardio_complete
+            and not self._set_complete_spoken
+        ) if is_hk else False
+
+        if cardio_done:
+            self._audio.say("High knee cardio complete. Great job!")
+            if config.SAVE_STATS_CSV:
+                path = self._logger.save(
+                    stats, stats.elapsed_seconds, self._exercise_key,
+                    extra=hk_ctr if isinstance(hk_ctr, HighKneeCounter) else None,
+                )
+                print(f"[INFO] Stats saved to {path}")
+            self._set_complete_spoken = True
+        elif (
+            stats.sets_completed > 0
+            and stats.reps_in_current_set == 0
+            and not self._set_complete_spoken
+        ):
             if stats.workout_complete:
                 self._audio.say(f"{meta['name']} workout complete. Great job!")
                 if config.SAVE_STATS_CSV:
                     path = self._logger.save(
-                        stats, stats.elapsed_seconds, self._exercise_key
+                        stats, stats.elapsed_seconds, self._exercise_key,
+                        extra=hk_ctr if isinstance(hk_ctr, HighKneeCounter) else None,
                     )
                     print(f"[INFO] Stats saved to {path}")
             else:
@@ -559,9 +660,14 @@ class FitnessTrackerApp:
         self._detector.release()
 
         # Save stats if session has any reps
-        stats = self._counter.stats
+        stats  = self._counter.stats
+        is_hk  = self._exercise_key == "highknee"
+        hk_ctr = self._counter if is_hk else None
         if config.SAVE_STATS_CSV and stats.total_reps > 0:
-            path = self._logger.save(stats, stats.elapsed_seconds, self._exercise_key)
+            path = self._logger.save(
+                stats, stats.elapsed_seconds, self._exercise_key,
+                extra=hk_ctr if isinstance(hk_ctr, HighKneeCounter) else None,
+            )
             print(f"[INFO] Final stats saved to {path}")
 
         cv2.destroyAllWindows()

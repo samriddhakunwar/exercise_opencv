@@ -6,8 +6,9 @@ Shared base infrastructure and Squat counter.
 Architecture note
 ~~~~~~~~~~~~~~~~~
 ExerciseBase  ← abstract base class for all exercises
-    ├── SquatCounter    ← knee-angle FSM  (this file)
-    ├── PushUpCounter   ← elbow-angle FSM (pushup_counter.py)
+    ├── SquatCounter      ← knee-angle FSM          (this file)
+    ├── PushUpCounter     ← elbow-angle FSM          (pushup_counter.py)
+    ├── HighKneeCounter   ← dual-leg marching FSM    (high_knee_counter.py)
     └── (LungeCounter, CurlCounter, PlankCounter … stubs ready for extension)
 
 New exercises should inherit from ExerciseBase and implement
@@ -53,6 +54,11 @@ class FormIssue(str, enum.Enum):
     HIPS_UP        = "KEEP YOUR HIPS UP"
     HIPS_DOWN      = "LOWER YOUR HIPS"
     MOVE_SIDEWAYS  = "MOVE SIDEWAYS"
+    # High Knee-specific
+    RAISE_KNEES_HIGHER = "LIFT ABOVE HIP!"
+    ALTERNATE_LEGS     = "ALTERNATE LEGS"
+    MOVE_FASTER        = "MOVE FASTER!"
+    SLOW_DOWN          = "SLOW DOWN"
 
 
 class SquatState(str, enum.Enum):

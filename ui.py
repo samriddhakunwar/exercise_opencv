@@ -139,8 +139,16 @@ class RenderData:
     slowest_rep:      float = 0.0
     avg_depth:        float = 0.0
     # Exercise identity
-    exercise_name:    str   = "SQUAT"   # "SQUAT" or "PUSH-UP"
+    exercise_name:    str   = "SQUAT"   # "SQUAT", "PUSH-UP", or "HIGH KNEES"
     angle_label:      str   = "Knee"    # label shown next to the live angle
+    # High Knee / pace extras (ignored for other exercises)
+    current_pace:     float = 0.0       # steps per minute
+    average_pace:     float = 0.0
+    fastest_pace:     float = 0.0
+    total_lifts:      int   = 0         # individual knee lifts (for cardio mode)
+    cardio_remaining: float = 0.0       # seconds left in cardio session
+    is_cardio:        bool  = False     # True when in cardio mode
+    bar_label:        str   = "DEPTH"   # label above the right-side progress bar
 
 
 # ---------------------------------------------------------------------------
@@ -283,45 +291,70 @@ class UIRenderer:
         _draw_text_shadow(frame, pct_str,
                           (bx + bar_w // 2 - tw // 2, by + bar_h + 22),
                           0.5, config.COLOR_WHITE, 1)
-        _draw_text_shadow(frame, "DEPTH",
-                          (bx + bar_w // 2 - 20, by - 12),
+        bar_label = getattr(data, 'bar_label', 'DEPTH')
+        lw, _ = _text_size(bar_label, 0.45, 1)
+        _draw_text_shadow(frame, bar_label,
+                          (bx + bar_w // 2 - lw // 2, by - 12),
                           0.45, config.COLOR_WHITE, 1)
 
     def _render_bottom_bar(self, frame: np.ndarray, data: RenderData) -> None:
         """Metrics strip along the bottom of the frame."""
-        bar_h = 56
+        bar_h = 68
         by    = self._h - bar_h
         _alpha_rect(frame, 0, by, self._w, self._h,
                     config.COLOR_SEMI_BG, alpha=0.75, radius=0)
 
-        # Elapsed time
-        elapsed  = int(data.elapsed_seconds)
-        mins, secs = divmod(elapsed, 60)
-        time_str = f"⏱  {mins:02d}:{secs:02d}"
+        # --- Left side: elapsed or cardio time -------------------------
+        if data.is_cardio and data.cardio_remaining > 0:
+            rem = int(data.cardio_remaining)
+            m2, s2 = divmod(rem, 60)
+            time_str = f"⏱  {m2:02d}:{s2:02d} LEFT"
+        else:
+            elapsed = int(data.elapsed_seconds)
+            mins, secs = divmod(elapsed, 60)
+            time_str = f"⏱  {mins:02d}:{secs:02d}"
         _draw_text_shadow(frame, time_str,
-                          (18, self._h - 18), 0.65, config.COLOR_WHITE, 1)
+                          (18, self._h - 30), 0.65, config.COLOR_WHITE, 1)
 
-        # FPS
+        # --- Centre: FPS -----------------------------------------------
         if config.SHOW_FPS:
             fps_str  = f"FPS: {data.fps:.1f}"
             fw, _    = _text_size(fps_str, 0.55, 1)
             fps_col  = config.COLOR_GREEN if data.fps >= 25 else config.COLOR_RED
             _draw_text_shadow(frame, fps_str,
-                              (self._w // 2 - fw // 2, self._h - 18),
+                              (self._w // 2 - fw // 2, self._h - 10),
                               0.55, fps_col, 1)
 
-        # Angle readout — label depends on exercise
-        if config.SHOW_ANGLE:
+        # --- Right side: angle or pace ---------------------------------
+        if data.is_cardio or data.exercise_name == "HIGH KNEES":
+            # Show pace
+            pace_col = (
+                config.COLOR_GREEN  if data.current_pace >= config.HIGH_KNEE_GOOD_SPEED
+                else config.COLOR_YELLOW if data.current_pace >= config.HIGH_KNEE_MIN_SPEED
+                else config.COLOR_RED
+            )
+            pace_str = f"PACE: {data.current_pace:.0f} spm"
+            pw, _ = _text_size(pace_str, 0.60, 1)
+            _draw_text_shadow(frame, pace_str,
+                              (self._w - pw - 18, self._h - 30),
+                              0.60, pace_col, 1)
+            avg_str = f"AVG: {data.average_pace:.0f} spm"
+            aw2, _ = _text_size(avg_str, 0.50, 1)
+            _draw_text_shadow(frame, avg_str,
+                              (self._w - aw2 - 18, self._h - 10),
+                              0.50, config.COLOR_WHITE, 1)
+        elif config.SHOW_ANGLE:
             ang_str = f"{data.angle_label}: {data.knee_angle:.1f}°"
             aw, _   = _text_size(ang_str, 0.60, 1)
             _draw_text_shadow(frame, ang_str,
-                              (self._w - aw - 18, self._h - 18),
+                              (self._w - aw - 18, self._h - 30),
                               0.60, config.COLOR_ORANGE, 1)
 
-        # Calories
+        # --- Calories (low row centre) ---------------------------------
         cal_str = f"🔥 {data.calories:.1f} kcal"
+        cw, _ = _text_size(cal_str, 0.52, 1)
         _draw_text_shadow(frame, cal_str,
-                          (self._w // 2 - 60, self._h - 40),
+                          (self._w // 2 - cw // 2, self._h - 30),
                           0.52, config.COLOR_YELLOW, 1)
 
     def _render_coaching_message(self, frame: np.ndarray, data: RenderData) -> None:
@@ -434,15 +467,26 @@ class UIRenderer:
         _alpha_rect(frame, bx1, by1, bx1 + box_w, by1 + box_h,
                     config.COLOR_SEMI_BG, alpha=0.85)
 
-        lines = [
-            ("Total Reps",      str(data.total_reps),          config.COLOR_GREEN),
-            ("Sets Completed",  f"{data.sets_completed} / {data.target_sets}", config.COLOR_WHITE),
-            ("Duration",        _fmt_time(data.elapsed_seconds), config.COLOR_WHITE),
-            (f"Avg {data.angle_label} Angle", f"{data.avg_depth:.1f}°", config.COLOR_ORANGE),
-            ("Fastest Rep",     f"{data.fastest_rep:.2f}s",     config.COLOR_GREEN),
-            ("Slowest Rep",     f"{data.slowest_rep:.2f}s",     config.COLOR_RED),
-            ("Calories Burned", f"{data.calories:.1f} kcal",    config.COLOR_YELLOW),
-        ]
+        if data.exercise_name == "HIGH KNEES":
+            lines = [
+                ("Total Lifts",     str(data.total_lifts),         config.COLOR_GREEN),
+                ("Total Reps",      str(data.total_reps),          config.COLOR_WHITE),
+                ("Duration",        _fmt_time(data.elapsed_seconds), config.COLOR_WHITE),
+                ("Avg Knee Height", f"{data.avg_depth * 100:.0f}%", config.COLOR_ORANGE),
+                ("Avg Pace",        f"{data.average_pace:.0f} spm", config.COLOR_GREEN),
+                ("Peak Pace",       f"{data.fastest_pace:.0f} spm", config.COLOR_ACCENT),
+                ("Calories Burned", f"{data.calories:.1f} kcal",    config.COLOR_YELLOW),
+            ]
+        else:
+            lines = [
+                ("Total Reps",      str(data.total_reps),          config.COLOR_GREEN),
+                ("Sets Completed",  f"{data.sets_completed} / {data.target_sets}", config.COLOR_WHITE),
+                ("Duration",        _fmt_time(data.elapsed_seconds), config.COLOR_WHITE),
+                (f"Avg {data.angle_label} Angle", f"{data.avg_depth:.1f}°", config.COLOR_ORANGE),
+                ("Fastest Rep",     f"{data.fastest_rep:.2f}s",     config.COLOR_GREEN),
+                ("Slowest Rep",     f"{data.slowest_rep:.2f}s",     config.COLOR_RED),
+                ("Calories Burned", f"{data.calories:.1f} kcal",    config.COLOR_YELLOW),
+            ]
         y = by1 + 50
         for label, value, color in lines:
             _draw_text_shadow(frame, f"{label}:", (bx1 + 30, y), 0.70, config.COLOR_WHITE, 1)

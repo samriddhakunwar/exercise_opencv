@@ -4,7 +4,7 @@ config.py
 Central configuration for the AI Fitness Tracker application.
 Modify values here to change application behaviour without touching any other file.
 
-Supported exercises: Squats, Push-ups  (more via ExerciseBase subclasses)
+Supported exercises: Squats, Push-ups, High Knees  (more via ExerciseBase subclasses)
 """
 
 # ---------------------------------------------------------------------------
@@ -106,6 +106,7 @@ TARGET_PUSHUP_SETS: int = 3         # Total sets
 USER_WEIGHT_KG: float = 70.0       # Default user weight for calorie estimate
 CALORIES_PER_SQUAT: float  = 0.32  # Approximate kcal per squat rep
 CALORIES_PER_PUSHUP: float = 0.29  # Approximate kcal per push-up rep
+CALORIES_PER_HIGH_KNEE: float = 0.10  # Approximate kcal per high-knee step (single lift)
 
 # ---------------------------------------------------------------------------
 # Colour palette  (BGR for OpenCV)
@@ -126,3 +127,30 @@ FONT_SCALE_LARGE: float  = 1.8
 FONT_SCALE_MEDIUM: float = 1.0
 FONT_SCALE_SMALL: float  = 0.65
 FONT_THICKNESS: int = 2
+
+# ---------------------------------------------------------------------------
+# High Knee thresholds & targets
+# ---------------------------------------------------------------------------
+
+# Workout targets (Rep Mode)
+HIGH_KNEE_TARGET_REPS: int = 20          # Left-right cycles per set
+HIGH_KNEE_TARGET_SETS: int = 3           # Total sets
+
+# Cardio mode durations (seconds) — user picks entry 0, 1, or 2
+HIGH_KNEE_CARDIO_DURATIONS: list = [30, 45, 60]
+
+# Detection thresholds
+HIGH_KNEE_MIN_HEIGHT_RATIO: float = 0.72  # Knee y / hip y  (1.0 = at hip level)
+HIGH_KNEE_SUPPORT_KNEE_ANGLE: float = 150.0  # Min knee angle on supporting leg
+HIGH_KNEE_MIN_LIFT_DELTA: float = 0.05   # Min upward movement before "up" counts
+
+# Pace limits (steps per minute — one knee-lift = one step)
+HIGH_KNEE_MIN_SPEED: float = 30.0        # Below this → "Too Slow" (red)
+HIGH_KNEE_GOOD_SPEED: float = 60.0       # Above this → "Good Pace" (green)
+HIGH_KNEE_MAX_SPEED: float = 180.0       # Above this → "Slow Down!"
+
+# Smoothing
+HIGH_KNEE_SMOOTHING_WINDOW: int = 5      # Frames for height moving average
+
+# UI toggles
+SHOW_KNEE_HEIGHT_BAR: bool = True        # Show knee-height progress bar
