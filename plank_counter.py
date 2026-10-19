@@ -41,6 +41,7 @@ class PlankCounter(ExerciseBase):
     TARGET_REPS      = 1          # One hold per set
     TARGET_SETS      = config.PLANK_TARGET_SETS
     CALORIES_PER_REP = 0.0        # Calories are per second, see below
+    BEST_LOWER_IS_BETTER = False  # best_metric is hold time
 
     def __init__(self) -> None:
         """Initialise the plank timer."""
@@ -127,6 +128,19 @@ class PlankCounter(ExerciseBase):
     def reset(self) -> None:
         """Reset all counters, stats, and FSM state."""
         self.__init__()
+
+    def on_session_end(self) -> None:
+        """Record a hold that is still running when the session stops."""
+        if self._state != PlankState.WAITING:
+            self._end_hold()
+
+    def best_metric(self) -> Optional[float]:
+        """Longest hold in seconds."""
+        return self.longest_hold
+
+    def record_value(self) -> float:
+        """Plank records are about hold time, not hold count."""
+        return self.longest_hold
 
     def rep_announcement(self) -> Optional[str]:
         """Set completion is announced by the app; nothing per 'rep'."""

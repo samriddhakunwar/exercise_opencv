@@ -225,6 +225,8 @@ class ExerciseBase(ABC):
     TARGET_REPS: int = config.TARGET_REPS
     TARGET_SETS: int = config.TARGET_SETS
     CALORIES_PER_REP: float = config.CALORIES_PER_SQUAT
+    # Direction of best_metric(): True for angles (deeper = smaller angle)
+    BEST_LOWER_IS_BETTER: bool = True
 
     def __init__(self) -> None:
         """Initialise base state."""
@@ -276,6 +278,23 @@ class ExerciseBase(ABC):
 
     def on_session_start(self) -> None:
         """Called once when the countdown ends and counting begins."""
+
+    def on_session_end(self) -> None:
+        """Called before the session is saved (finish any open hold, …)."""
+
+    def avg_metric(self) -> Optional[float]:
+        """Average of the primary metric for the history table."""
+        return self.stats.average_depth if self.stats.depths else None
+
+    def best_metric(self) -> Optional[float]:
+        """Best single-rep value of the primary metric (deepest angle, …)."""
+        if not self.stats.depths:
+            return None
+        return (min if self.BEST_LOWER_IS_BETTER else max)(self.stats.depths)
+
+    def record_value(self) -> float:
+        """Value compared against history for "New record!" (default: reps)."""
+        return float(self.stats.total_reps)
 
     def pop_cues(self) -> List[str]:
         """Return and clear phrases queued for the audio dispatcher."""

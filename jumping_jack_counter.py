@@ -39,6 +39,7 @@ class JumpingJackCounter(ExerciseBase):
     TARGET_REPS      = config.JJ_TARGET_REPS
     TARGET_SETS      = config.JJ_TARGET_SETS
     CALORIES_PER_REP = config.CALORIES_PER_JUMPING_JACK
+    BEST_LOWER_IS_BETTER = False   # depths hold peak arm angle — higher is better
 
     def __init__(self) -> None:
         """Initialise the jumping-jack counter."""

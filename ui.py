@@ -163,6 +163,9 @@ class RenderData:
     hold_seconds:     float = 0.0
     target_seconds:   float = 0.0
     best_hold:        float = 0.0
+    # History
+    last_session:     str   = ""        # "Last time: …" (countdown screen)
+    new_record:       bool  = False     # personal best beaten this session
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +219,8 @@ class UIRenderer:
         self._render_bottom_bar(frame, data)
         self._render_coaching_message(frame, data)
         self._render_hotkey_hint(frame)
+        if data.new_record:
+            self._render_record_badge(frame)
 
         return frame
 
@@ -279,7 +284,7 @@ class UIRenderer:
         bar_h  = 200
         margin = 14
         bx     = self._w - margin - bar_w
-        by     = margin
+        by     = margin + 24        # room for the label above the bar
 
         # Background track
         _alpha_rect(frame, bx - 6, by - 6,
@@ -470,7 +475,24 @@ class UIRenderer:
         _draw_text_shadow(frame, ready,
                           (self._w // 2 - rw // 2, self._h // 4),
                           0.9, config.COLOR_WHITE, 2)
+
+        if data.last_session:
+            lw, _ = _text_size(data.last_session, 0.75, 1)
+            _draw_text_shadow(frame, data.last_session,
+                              (self._w // 2 - lw // 2, self._h // 4 + 45),
+                              0.75, config.COLOR_ORANGE, 1)
         return frame
+
+    def _render_record_badge(self, frame: np.ndarray) -> None:
+        """Pulsing "NEW RECORD!" badge at the top centre."""
+        text = "NEW RECORD!"
+        tw, th = _text_size(text, 1.0, 2)
+        x, y = self._w // 2 - tw // 2, 50
+        _alpha_rect(frame, x - 18, y - th - 14, x + tw + 18, y + 14,
+                    config.COLOR_SEMI_BG, alpha=0.75)
+        α = 0.6 + 0.4 * _pulse_alpha(1.0)
+        col = tuple(int(c * α) for c in config.COLOR_YELLOW)
+        _draw_text_shadow(frame, text, (x, y), 1.0, col, 2)  # type: ignore[arg-type]
 
     def _render_summary(self, frame: np.ndarray, data: RenderData) -> np.ndarray:
         """Full-screen workout summary overlay."""

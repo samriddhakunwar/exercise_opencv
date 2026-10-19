@@ -78,6 +78,9 @@ SAVE_STATS_CSV: bool = True
 STATS_DIR: str = "workouts"        # Folder created automatically
 ENABLE_RECORDING: bool = False     # Set True to save session video
 RECORDING_DIR: str = "recordings"
+SAVE_HISTORY: bool = True          # Append each session to the history DB
+HISTORY_DB: str = "data/history.db"
+CHARTS_DIR: str = "data/charts"    # progress.py writes PNG charts here
 
 # ---------------------------------------------------------------------------
 # Push-up angle thresholds (degrees)  ← relaxed for easier detection

@@ -94,3 +94,11 @@ def test_not_in_position_prompts_user(clock):
     c = PlankCounter()
     _, issue, _ = c.process_frame(squat_pose(175), (720, 1280))
     assert issue == FormIssue.GET_IN_PLANK
+
+
+def test_session_end_records_running_hold(clock):
+    c = PlankCounter()
+    feed_timed(c, plank(8), clock)
+    c.on_session_end()
+    assert c.attempts == [pytest.approx(8, abs=0.3)]
+    assert c.record_value() == pytest.approx(8, abs=0.3)

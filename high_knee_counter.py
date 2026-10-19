@@ -104,6 +104,7 @@ class HighKneeCounter(ExerciseBase):
     TARGET_REPS       = config.HIGH_KNEE_TARGET_REPS
     TARGET_SETS       = config.HIGH_KNEE_TARGET_SETS
     CALORIES_PER_REP  = config.CALORIES_PER_HIGH_KNEE
+    BEST_LOWER_IS_BETTER = False   # higher knee = better
 
     def __init__(
         self,
@@ -217,6 +218,14 @@ class HighKneeCounter(ExerciseBase):
             "cardio_remaining": self.cardio_time_remaining,
             "is_cardio":        self.mode == HighKneeMode.CARDIO,
         }
+
+    def avg_metric(self):
+        """Average knee height (0-1) over all lifts."""
+        return self.avg_knee_height if self.total_lifts else None
+
+    def best_metric(self):
+        """Highest knee lift (0-1)."""
+        return self.max_knee_height if self.total_lifts else None
 
     def csv_rows(self, angle_label: str) -> list:
         """Lift / height / pace summary rows for the session CSV."""

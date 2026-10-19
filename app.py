@@ -29,6 +29,7 @@ import _mp_compat  # noqa: F401
 
 import sys
 import csv
+import sqlite3
 import os
 import time
 import threading
@@ -40,6 +41,7 @@ import cv2
 import numpy as np
 
 import config
+import history
 from pose_detector import PoseDetector
 from exercise_base import ExerciseBase, FormIssue, RepResult
 from exercises import EXERCISES
@@ -208,7 +210,8 @@ class FitnessTrackerApp:
         # Exercise state
         self._exercise_key  = next(iter(EXERCISES))    # First registry entry
         self._counter       = self._build_counter()
-        self._session_saved = False                    # Guards duplicate CSVs
+        self._session_saved = False                    # Guards duplicate saves
+        self._load_history()
 
         # Application state
         self._paused    = False
@@ -243,13 +246,42 @@ class FitnessTrackerApp:
         return EXERCISES[self._exercise_key].factory()
 
     def _save_session(self) -> None:
-        """Save the current counter's stats once (if it has any reps)."""
-        stats = self._counter.stats
-        if not config.SAVE_STATS_CSV or self._session_saved or stats.total_reps == 0:
+        """Save the current session once: CSV + one history row."""
+        if self._session_saved:
             return
-        path = self._logger.save(self._counter, stats.elapsed_seconds, self._exercise_key)
+        self._counter.on_session_end()
+        stats = self._counter.stats
+        if stats.total_reps == 0 and self._counter.record_value() == 0:
+            return
         self._session_saved = True
-        print(f"[INFO] Stats for {self._exercise_key} saved to {path}")
+        if config.SAVE_STATS_CSV:
+            path = self._logger.save(self._counter, stats.elapsed_seconds, self._exercise_key)
+            print(f"[INFO] Stats for {self._exercise_key} saved to {path}")
+        if config.SAVE_HISTORY:
+            try:
+                history.add_session(self._exercise_key, self._counter, stats.elapsed_seconds)
+            except sqlite3.Error as exc:
+                print(f"[WARN] Could not write history: {exc}")
+
+    def _load_history(self) -> None:
+        """Fetch "last time" text and the record to beat for this exercise."""
+        self._new_record = False
+        try:
+            self._last_text      = history.last_time_text(self._exercise_key)
+            self._record_to_beat = history.personal_record(self._exercise_key)
+        except sqlite3.Error as exc:
+            print(f"[WARN] Could not read history: {exc}")
+            self._last_text, self._record_to_beat = "", None
+
+    def _check_record(self) -> None:
+        """Announce once per session when the user beats their best."""
+        if (
+            not self._new_record
+            and self._record_to_beat is not None
+            and self._counter.record_value() > self._record_to_beat
+        ):
+            self._new_record = True
+            self._audio.say("New record!")
 
     def _switch_exercise(self) -> None:
         """Cycle to the next exercise and reset everything."""
@@ -260,6 +292,7 @@ class FitnessTrackerApp:
         self._exercise_key  = keys[(keys.index(self._exercise_key) + 1) % len(keys)]
         self._counter       = self._build_counter()
         self._session_saved       = False
+        self._load_history()
         self._last_spoken_rep     = 0
         self._announced_sets = 0
         self._paused              = False
@@ -353,6 +386,7 @@ class FitnessTrackerApp:
                 joints, frame.shape[:2]
             )
             self._dispatch_audio(rep_result, form_issue, stats)
+            self._check_record()
 
             if self._counter.session_complete:
                 self._audio.say(f"{spec.name} workout complete. Great job!")
@@ -382,6 +416,8 @@ class FitnessTrackerApp:
             exercise_name    = spec.name,
             angle_label      = spec.angle_label,
             bar_label        = spec.bar_label,
+            last_session     = self._last_text,
+            new_record       = self._new_record,
         )
         fields.update(self._counter.hud_fields())   # exercise-specific extras
         data = RenderData(**fields)
@@ -493,8 +529,10 @@ class FitnessTrackerApp:
             phrase = "Paused." if self._paused else "Resuming."
             self._audio.say(phrase)
         elif key == ord("r"):                   # R → reset session
+            self._save_session()                # keep what was done before the reset
             self._counter.reset()
             self._session_saved   = False
+            self._load_history()
             self._announced_sets = 0
             self._in_countdown    = True
             self._countdown_start = time.time()
