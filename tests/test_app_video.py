@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 import app
+import calibration
 import clock
 import config
 import history
@@ -40,15 +41,17 @@ def run_video(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(config, "HISTORY_DB", str(tmp_path / "history.db"))
     monkeypatch.setattr(app, "PoseDetector", FakeDetector)
+    for name in calibration.DEFAULTS:          # calibration mutates config
+        monkeypatch.setattr(config, name, getattr(config, name))
 
-    def run(exercise, poses):
+    def run(exercise, poses, **kwargs):
         FakeDetector.poses = poses
         path = str(tmp_path / "clip.avi")
         writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"MJPG"), FPS, (64, 36))
         for _ in poses:
             writer.write(np.zeros((36, 64, 3), np.uint8))
         writer.release()
-        tracker = app.FitnessTrackerApp(exercise=exercise, video=path, headless=True)
+        tracker = app.FitnessTrackerApp(exercise=exercise, video=path, headless=True, **kwargs)
         tracker.run()
         return tracker
 
@@ -77,10 +80,24 @@ def test_plank_hold_uses_video_time(run_video):
     assert history.last_session("plank")["best_metric"] == pytest.approx(seconds, abs=0.2)
 
 
+def test_calibrate_then_count_with_calibrated_thresholds(run_video, tmp_path):
+    # Shallow mover: bottoms out at 112°, which never reaches the default
+    # 100° depth — after calibration the same squat counts.
+    slow = ramp(172, 112, 20) + ramp(112, 172, 20)
+    rep  = hold(172) + ramp(172, 112) + hold(112) + ramp(112, 172) + hold(172)
+    poses = [squat_pose(a) for a in hold(172, 4 * FPS) + slow + slow + rep * 3]
+    tracker = run_video("squat", poses, calibrate=True)
+
+    saved = calibration.load()["squat"]
+    assert saved["SQUAT_DEPTH_ANGLE"] > 112
+    assert config.SQUAT_DEPTH_ANGLE == saved["SQUAT_DEPTH_ANGLE"]
+    assert tracker._counter.stats.total_reps == 3
+
+
 def test_parse_args():
     args = app.parse_args(["--video", "x.mp4", "--exercise", "curl", "--camera", "2",
-                           "--no-audio", "--headless"])
-    assert (args.video, args.exercise, args.camera, args.no_audio, args.headless) == \
-        ("x.mp4", "curl", 2, True, True)
+                           "--no-audio", "--headless", "--calibrate"])
+    assert (args.video, args.exercise, args.camera, args.no_audio, args.headless,
+            args.calibrate) == ("x.mp4", "curl", 2, True, True, True)
     with pytest.raises(SystemExit):
         app.parse_args(["--exercise", "burpee"])

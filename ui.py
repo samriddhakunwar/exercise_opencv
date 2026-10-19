@@ -165,7 +165,7 @@ class RenderData:
     best_hold:        float = 0.0
     # History
     last_session:     str   = ""        # "Last time: …" (countdown screen)
-    new_record:       bool  = False     # personal best beaten this session
+    banner:           str   = ""        # top-centre badge ("NEW RECORD!", "CALIBRATING")
 
 
 # ---------------------------------------------------------------------------
@@ -219,8 +219,8 @@ class UIRenderer:
         self._render_bottom_bar(frame, data)
         self._render_coaching_message(frame, data)
         self._render_hotkey_hint(frame)
-        if data.new_record:
-            self._render_record_badge(frame)
+        if data.banner:
+            self._render_badge(frame, data.banner)
 
         return frame
 
@@ -483,9 +483,8 @@ class UIRenderer:
                               0.75, config.COLOR_ORANGE, 1)
         return frame
 
-    def _render_record_badge(self, frame: np.ndarray) -> None:
-        """Pulsing "NEW RECORD!" badge at the top centre."""
-        text = "NEW RECORD!"
+    def _render_badge(self, frame: np.ndarray, text: str) -> None:
+        """Pulsing badge at the top centre ("NEW RECORD!", "CALIBRATING")."""
         tw, th = _text_size(text, 1.0, 2)
         x, y = self._w // 2 - tw // 2, 50
         _alpha_rect(frame, x - 18, y - th - 14, x + tw + 18, y + 14,
@@ -562,7 +561,7 @@ class UIRenderer:
 
     def _render_hotkey_hint(self, frame: np.ndarray) -> None:
         """Small hotkey reference in the bottom-left area."""
-        hints = "SPACE=Pause  R=Reset  E=Exercise  Q=Quit  S=Screenshot"
+        hints = "SPACE=Pause  R=Reset  E=Exercise  C=Calibrate  Q=Quit  S=Screenshot"
         hw, _ = _text_size(hints, 0.42, 1)
         _draw_text_shadow(frame, hints,
                           (self._w // 2 - hw // 2, self._h - 68),

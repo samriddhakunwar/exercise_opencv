@@ -205,3 +205,11 @@ LUNGE_BOTTOM_EXIT_ANGLE: float = 120.0 # Leaving the bottom (hysteresis)
 LUNGE_KNEE_TOE_TOLERANCE: float = 0.15 # Knee may pass the toe by this × shin length
 LUNGE_FACING_MIN: float = 0.15         # |nose - shoulder mid| / torso length for side view
 CALORIES_PER_LUNGE: float = 0.35
+
+# ---------------------------------------------------------------------------
+# Per-user calibration (C key / --calibrate)
+# ---------------------------------------------------------------------------
+CALIBRATION_FILE: str = "data/calibration.json"
+CALIBRATION_STAND_SECONDS: float = 3.0   # Hold-still phase
+CALIBRATION_REPS: int = 2                # Slow full-range reps to record
+CALIBRATION_TIMEOUT: float = 30.0        # Max seconds for the reps phase

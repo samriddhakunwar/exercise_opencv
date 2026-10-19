@@ -19,11 +19,13 @@ Command line
     python app.py --video clip.mp4 --headless --exercise pushup
                                           no window; print final stats
     --camera N   override CAMERA_INDEX     --no-audio   disable TTS
+    --calibrate  run calibration for the starting exercise first
 
 Keyboard shortcuts
 ~~~~~~~~~~~~~~~~~~
     Space  → Pause / Resume
     R      → Reset current session
+    C      → Calibrate thresholds for the current exercise
     E      → Switch exercise (cycles through exercises.EXERCISES)
     S      → Save screenshot
     V      → Toggle video recording
@@ -50,6 +52,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
+import calibration
 import clock
 import config
 import history
@@ -218,6 +221,7 @@ class FitnessTrackerApp:
         camera: Optional[int] = None,
         audio: bool = True,
         headless: bool = False,
+        calibrate: bool = False,
     ) -> None:
         """Initialise all subsystems.
 
@@ -227,6 +231,7 @@ class FitnessTrackerApp:
             camera:   Webcam index (default: config.CAMERA_INDEX).
             audio:    Enable spoken feedback.
             headless: Run without a window and print the final stats.
+            calibrate: Start with calibration for the starting exercise.
         """
         self._video    = video
         self._camera   = config.CAMERA_INDEX if camera is None else camera
@@ -239,6 +244,14 @@ class FitnessTrackerApp:
         # Capture
         self._cap: Optional[cv2.VideoCapture] = None
         self._video_time = 0.0                         # Seconds into the video
+
+        # Calibration: saved per-exercise thresholds override config defaults
+        applied = calibration.apply(calibration.load())
+        if applied:
+            print(f"[INFO] Loaded calibration for: {', '.join(applied)}")
+        self._calibrate_on_start = calibrate
+        self._calibrator: Optional[calibration.Calibrator] = None
+        self._cal_counter: Optional[ExerciseBase] = None
 
         # Exercise state
         self._exercise_key  = exercise or next(iter(EXERCISES))
@@ -365,7 +378,9 @@ class FitnessTrackerApp:
 
         self._begin_countdown()
         spec = EXERCISES[self._exercise_key]
-        if not self._video:
+        if self._calibrate_on_start:
+            self._start_calibration()
+        elif not self._video:
             self._audio.say(
                 f"Get ready. {spec.name} workout starts in {config.COUNTDOWN_SECONDS}."
             )
@@ -408,6 +423,48 @@ class FitnessTrackerApp:
             self._in_countdown    = True
             self._countdown_start = time.time()
 
+    def _start_calibration(self) -> None:
+        """Begin guided calibration for the current exercise."""
+        key = self._exercise_key
+        if key not in calibration.SPECS:
+            print(f"[INFO] Calibration isn't available for {EXERCISES[key].name}.")
+            self._audio.say("Calibration isn't available for this exercise.")
+            return
+        self._calibrator   = calibration.Calibrator(key)
+        self._cal_counter  = self._build_counter()     # used only to read the metric
+        self._in_countdown = False
+        self._paused       = False
+        print(f"[INFO] Calibrating {EXERCISES[key].name}…")
+
+    def _update_calibration(self, joints, frame_shape) -> float:
+        """Feed one frame to the calibrator; finish up when it's done.
+
+        Returns:
+            The metric measured this frame (0.0 when no body is found).
+        """
+        cal = self._calibrator
+        metric = None
+        if joints is not None:
+            _, _, metric = self._cal_counter.process_frame(joints, frame_shape)
+        cal.update(metric, clock.now())
+        for cue in cal.cues:
+            self._audio.say(cue)
+        cal.cues.clear()
+        if not cal.finished:
+            return metric or 0.0
+
+        if cal.result is not None:
+            calibration.save(cal.exercise, cal.result)
+            calibration.apply({cal.exercise: cal.result})
+            print(f"[INFO] Calibration saved for {cal.exercise}: {cal.result}")
+        else:
+            print("[INFO] Calibration failed (range too small) — keeping current thresholds.")
+        self._calibrator  = None
+        self._cal_counter = None
+        self._counter.reset()
+        self._begin_countdown()
+        return metric or 0.0
+
     def _start_counting(self) -> None:
         """Countdown finished: reset the session timer and start counting."""
         self._counter.stats.start_time = clock.now()
@@ -442,12 +499,22 @@ class FitnessTrackerApp:
         # --- Pose detection -----------------------------------------
         joints, annotated = self._detector.process(frame)
 
+        calibrating = self._calibrator is not None
+        if calibrating:
+            cal_message = self._calibrator.message
+            cal_metric  = self._update_calibration(joints, frame.shape[:2])
+
         # ---- Exercise counting (skip during countdown/pause) ---------
         rep_result: Optional[RepResult] = None
         form_issue = FormIssue.NONE
         current_angle = 0.0
 
-        if not self._paused and not self._in_countdown and not self._counter.session_complete:
+        if (
+            not calibrating
+            and not self._paused
+            and not self._in_countdown
+            and not self._counter.session_complete
+        ):
             rep_result, form_issue, current_angle = self._counter.process_frame(
                 joints, frame.shape[:2]
             )
@@ -483,9 +550,12 @@ class FitnessTrackerApp:
             angle_label      = spec.angle_label,
             bar_label        = spec.bar_label,
             last_session     = self._last_text,
-            new_record       = self._new_record,
+            banner           = "NEW RECORD!" if self._new_record else "",
         )
         fields.update(self._counter.hud_fields())   # exercise-specific extras
+        if calibrating:
+            fields.update(coaching_msg=cal_message, banner="CALIBRATING", countdown=0,
+                          knee_angle=cal_metric)
         data = RenderData(**fields)
 
         if self._headless:
@@ -608,7 +678,15 @@ class FitnessTrackerApp:
             self._paused          = False
             self._audio.say("Session reset. Get ready.")
         elif key == ord("e"):                   # E → switch exercise
+            self._calibrator = None
             self._switch_exercise()
+        elif key == ord("c"):                   # C → calibrate / cancel
+            if self._calibrator is None:
+                self._start_calibration()
+            else:
+                self._calibrator = None
+                self._begin_countdown()
+                self._audio.say("Calibration cancelled.")
         elif key == ord("s"):                   # S → screenshot
             self._take_screenshot(frame)
         elif key == ord("v"):                   # V → toggle recording
@@ -713,6 +791,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--no-audio", action="store_true", help="disable spoken feedback")
     parser.add_argument("--headless", action="store_true",
                         help="no window; print final stats (use with --video)")
+    parser.add_argument("--calibrate", action="store_true",
+                        help="calibrate thresholds for the starting exercise first")
     return parser.parse_args(argv)
 
 
@@ -724,5 +804,6 @@ if __name__ == "__main__":
         camera=args.camera,
         audio=not args.no_audio,
         headless=args.headless,
+        calibrate=args.calibrate,
     )
     app.run()
