@@ -6,7 +6,7 @@ alternating step enforcement, pace tracking, and cardio/rep modes.
 
 Architecture
 ~~~~~~~~~~~~
-Inherits from ExerciseBase (squat_counter.py) for shared session
+Inherits from ExerciseBase (exercise_base.py) for shared session
 statistics, rep acceptance, and coaching infrastructure.
 
 State machine (per leg)
@@ -36,7 +36,7 @@ from typing import Optional, Tuple, List
 
 import config
 from angle_utils import AngleSmoother, calculate_angle, map_range
-from squat_counter import ExerciseBase, FormIssue, RepResult, SessionStats
+from exercise_base import ExerciseBase, FormIssue, RepResult, SessionStats
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +194,39 @@ class HighKneeCounter(ExerciseBase):
         """Begin the cardio countdown (call when the session starts)."""
         if self._cardio_start is None:
             self._cardio_start = time.time()
+
+    @property
+    def session_complete(self) -> bool:
+        """Cardio mode ends on the timer; rep mode on completed sets."""
+        if self.mode == HighKneeMode.CARDIO:
+            return self.cardio_complete
+        return self.stats.workout_complete
+
+    def on_session_start(self) -> None:
+        """Start the cardio timer when counting begins."""
+        self.start_cardio_timer()
+
+    def hud_fields(self) -> dict:
+        """Pace / cardio fields for the HUD."""
+        return {
+            "avg_depth":        self.avg_knee_height,
+            "current_pace":     self.current_pace,
+            "average_pace":     self.average_pace,
+            "fastest_pace":     self.fastest_pace,
+            "total_lifts":      self.total_lifts,
+            "cardio_remaining": self.cardio_time_remaining,
+            "is_cardio":        self.mode == HighKneeMode.CARDIO,
+        }
+
+    def csv_rows(self, angle_label: str) -> list:
+        """Lift / height / pace summary rows for the session CSV."""
+        return [
+            ["Total Lifts",    self.total_lifts],
+            ["Avg Knee Height", f"{self.avg_knee_height * 100:.0f}%"],
+            ["Max Knee Height", f"{self.max_knee_height * 100:.0f}%"],
+            ["Avg Pace (spm)", f"{self.average_pace:.1f}"],
+            ["Peak Pace (spm)", f"{self.fastest_pace:.1f}"],
+        ]
 
     def process_frame(
         self,

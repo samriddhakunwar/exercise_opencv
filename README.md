@@ -41,8 +41,8 @@ Track reps, validate form, monitor workout progress, and receive live audio coac
 
 ```bash
 # 1. Clone or download the project
-git clone <repo-url>
-cd fitness-tracker
+git clone https://github.com/samriddhakunwar/exercise_opencv.git
+cd exercise_opencv
 
 # 2. (Recommended) Create a virtual environment
 python -m venv venv
@@ -63,11 +63,14 @@ python app.py
 ## 📁 Project Structure
 
 ```
-fitness-tracker/
+exercise_opencv/
 │
 ├── app.py               ← Entry point, main loop, keyboard/audio/CSV
+├── exercises.py         ← Exercise registry (key → counter + HUD metadata)
+├── exercise_base.py     ← ExerciseBase, SessionStats, RepResult, FormIssue
 ├── pose_detector.py     ← MediaPipe Pose wrapper + landmark smoother
-├── squat_counter.py     ← ExerciseBase + SquatCounter FSM + shared types
+├── squat_counter.py     ← SquatCounter FSM (knee angle)
+├── _mp_compat.py        ← Works around a protobuf/TensorFlow import clash
 ├── pushup_counter.py    ← PushUpCounter FSM (elbow-angle, body alignment)
 ├── high_knee_counter.py ← HighKneeCounter FSM (dual-leg, pace, cardio/rep)
 ├── angle_utils.py       ← Geometry helpers (angles, smoothing, alignment)
@@ -79,6 +82,7 @@ fitness-tracker/
 ├── recordings/          ← Auto-created (if recording enabled)
 │
 ├── requirements.txt
+├── .gitignore
 └── README.md
 ```
 
@@ -246,8 +250,8 @@ In **Cardio mode** every knee-lift increments the total counter.
 ## 🏗️ Architecture
 
 ```
-ExerciseBase           ← abstract base (squat_counter.py)
-  ├── SquatCounter     ← knee-angle FSM
+ExerciseBase           ← abstract base (exercise_base.py)
+  ├── SquatCounter     ← knee-angle FSM (squat_counter.py)
   ├── PushUpCounter    ← elbow-angle FSM (pushup_counter.py)
   └── HighKneeCounter  ← dual-leg marching FSM (high_knee_counter.py)
 
@@ -260,7 +264,7 @@ FitnessTrackerApp      ← orchestrates detection → counter → UI → audio
 
 Adding a new exercise:
 1. Subclass `ExerciseBase`, implement `process_frame` and `reset`.
-2. Add it to `_EXERCISE_CYCLE` and `_EXERCISE_META` in `app.py`.
+2. Add one `ExerciseSpec` entry to `EXERCISES` in `exercises.py`.
 3. Add config constants in `config.py`.
 
 All shared code (stats, audio, CSV logging, countdown, pause/resume, screenshot, recording) is inherited and requires **zero duplication**.

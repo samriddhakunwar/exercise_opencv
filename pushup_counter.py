@@ -5,7 +5,7 @@ Push-up counter — elbow-angle finite state machine.
 
 Architecture
 ~~~~~~~~~~~~
-Inherits from ExerciseBase (in squat_counter.py) for shared session
+Inherits from ExerciseBase (in exercise_base.py) for shared session
 statistics, rep acceptance, and coaching infrastructure.
 
 State machine::
@@ -38,7 +38,7 @@ from typing import Optional, Tuple
 
 import config
 from angle_utils import AngleSmoother, calculate_angle, map_range
-from squat_counter import ExerciseBase, FormIssue, RepResult, SessionStats
+from exercise_base import ExerciseBase, FormIssue, RepResult, SessionStats
 
 
 # ---------------------------------------------------------------------------
