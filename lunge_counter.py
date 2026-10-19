@@ -22,9 +22,9 @@ LUNGE_KNEE_TOE_TOLERANCE × shin length.
 from __future__ import annotations
 
 import enum
-import time
 from typing import Optional, Tuple
 
+import clock
 import config
 from angle_utils import AngleSmoother, calculate_angle, euclidean_distance, map_range
 from exercise_base import FormIssue, RepResult, SidedExerciseBase
@@ -102,7 +102,7 @@ class LungeCounter(SidedExerciseBase):
             self.coaching_message = "STEP AND LUNGE"
             if angle < config.LUNGE_STANDING_ANGLE:
                 self._state          = LungeState.GOING_DOWN
-                self._rep_start_time = time.time()
+                self._rep_start_time = clock.now()
                 self._rep_min_angle  = angle
                 self._rep_knee_ok    = True
 
@@ -130,7 +130,7 @@ class LungeCounter(SidedExerciseBase):
                 if not self._rep_knee_ok:
                     result = self._reject(FormIssue.KNEE_OVER_TOES)
                 else:
-                    duration = time.time() - self._rep_start_time
+                    duration = clock.now() - self._rep_start_time
                     self._accept_side_rep(self.front_leg, duration, self._rep_min_angle)
                     result = RepResult(True, FormIssue.NONE, self._rep_min_angle, duration)
                     self.coaching_message = (
@@ -182,4 +182,4 @@ class LungeCounter(SidedExerciseBase):
         """Build a rejected RepResult and update the coaching message."""
         self.coaching_message = f"BAD REP — {issue.value}"
         return RepResult(False, issue, self._rep_min_angle,
-                         time.time() - self._rep_start_time)
+                         clock.now() - self._rep_start_time)

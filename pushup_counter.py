@@ -31,10 +31,10 @@ distinguished without depending on which axis is vertical.
 
 from __future__ import annotations
 
-import time
 import enum
 from typing import Optional, Tuple
 
+import clock
 import config
 from angle_utils import AngleSmoother, body_line_deviation, calculate_angle, map_range
 from exercise_base import ExerciseBase, FormIssue, RepResult, SessionStats
@@ -155,7 +155,7 @@ class PushUpCounter(ExerciseBase):
             if smooth_angle < config.PUSHUP_TOP_ANGLE:
                 # Start descent
                 self._state            = PushUpState.LOWERING
-                self._rep_start_time   = time.time()
+                self._rep_start_time   = clock.now()
                 self._rep_min_angle    = smooth_angle
                 self._rep_depth_ok     = False
                 self._rep_ext_ok       = smooth_angle >= config.PUSHUP_FULL_EXT_ANGLE
@@ -230,7 +230,7 @@ class PushUpCounter(ExerciseBase):
         Returns:
             RepResult with counted status and form metadata.
         """
-        duration  = time.time() - (self._rep_start_time or time.time())
+        duration  = clock.now() - (self._rep_start_time or clock.now())
         min_angle = self._rep_min_angle
 
         issue = FormIssue.NONE

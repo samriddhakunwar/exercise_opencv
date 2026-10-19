@@ -30,10 +30,10 @@ Smoothing:  A light moving average on each knee's normalised height reduces
 from __future__ import annotations
 
 import enum
-import time
 import collections
 from typing import Optional, Tuple, List
 
+import clock
 import config
 from angle_utils import AngleSmoother, calculate_angle, map_range
 from exercise_base import ExerciseBase, FormIssue, RepResult, SessionStats
@@ -183,7 +183,7 @@ class HighKneeCounter(ExerciseBase):
         """Seconds remaining in cardio mode (0 if expired or not started)."""
         if self._cardio_start is None:
             return float(self.cardio_duration)
-        elapsed = time.time() - self._cardio_start
+        elapsed = clock.now() - self._cardio_start
         return max(0.0, self.cardio_duration - elapsed)
 
     @property
@@ -194,7 +194,7 @@ class HighKneeCounter(ExerciseBase):
     def start_cardio_timer(self) -> None:
         """Begin the cardio countdown (call when the session starts)."""
         if self._cardio_start is None:
-            self._cardio_start = time.time()
+            self._cardio_start = clock.now()
 
     @property
     def session_complete(self) -> bool:
@@ -312,7 +312,7 @@ class HighKneeCounter(ExerciseBase):
 
         # --- Process triggered lifts -----------------------------------
         if left_triggered or right_triggered:
-            now = time.time()
+            now = clock.now()
             self._lift_times.append(now)
             self.total_lifts += 1
             self._record_height(active_lift)
@@ -336,7 +336,7 @@ class HighKneeCounter(ExerciseBase):
                     self._right_up_this_cycle = True
 
                 if self._left_up_this_cycle and self._right_up_this_cycle:
-                    duration = time.time() - (self._rep_start_time or time.time())
+                    duration = clock.now() - (self._rep_start_time or clock.now())
                     self._accept_rep(
                         duration, active_lift, config.CALORIES_PER_HIGH_KNEE,
                         config.HIGH_KNEE_TARGET_REPS, config.HIGH_KNEE_TARGET_SETS,
@@ -347,7 +347,7 @@ class HighKneeCounter(ExerciseBase):
                     )
                     self._left_up_this_cycle  = False
                     self._right_up_this_cycle = False
-                    self._rep_start_time = time.time()
+                    self._rep_start_time = clock.now()
                     rep_result = RepResult(
                         counted=True, form_issue=FormIssue.NONE,
                         min_angle=active_lift, duration=duration,
@@ -543,7 +543,7 @@ class HighKneeCounter(ExerciseBase):
             form_issue:  Active form issue.
             just_lifted: True if a lift was counted this frame.
         """
-        now = time.time()
+        now = clock.now()
         if just_lifted:
             reps = self.stats.total_reps
             if self.mode == HighKneeMode.REP:

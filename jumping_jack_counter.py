@@ -18,9 +18,9 @@ jitter around a single boundary can't double count.
 from __future__ import annotations
 
 import enum
-import time
 from typing import Optional, Tuple
 
+import clock
 import config
 from angle_utils import AngleSmoother, calculate_angle, map_range
 from exercise_base import ExerciseBase, FormIssue, RepResult
@@ -100,7 +100,7 @@ class JumpingJackCounter(ExerciseBase):
             self.coaching_message = "JUMP!"
             if not closed:
                 self._state          = JackState.OPENING
-                self._rep_start_time = time.time()
+                self._rep_start_time = clock.now()
                 self._peak_arm_angle = arm_angle
                 self._seen_arms_up   = False
                 self._seen_feet_open = False
@@ -149,4 +149,4 @@ class JumpingJackCounter(ExerciseBase):
 
     def _duration(self) -> float:
         """Seconds since this rep started."""
-        return time.time() - (self._rep_start_time or time.time())
+        return clock.now() - (self._rep_start_time or clock.now())

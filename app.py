@@ -11,6 +11,15 @@ Responsibilities:
     * Session CSV export
     * Screenshot / recording management
 
+Command line
+~~~~~~~~~~~~
+    python app.py                         webcam, starts with squats
+    python app.py --exercise plank        pick the starting exercise
+    python app.py --video clip.mp4        process a video file instead
+    python app.py --video clip.mp4 --headless --exercise pushup
+                                          no window; print final stats
+    --camera N   override CAMERA_INDEX     --no-audio   disable TTS
+
 Keyboard shortcuts
 ~~~~~~~~~~~~~~~~~~
     Space  → Pause / Resume
@@ -30,6 +39,7 @@ import _mp_compat  # noqa: F401
 import sys
 import csv
 import sqlite3
+import argparse
 import os
 import time
 import threading
@@ -40,6 +50,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
+import clock
 import config
 import history
 from pose_detector import PoseDetector
@@ -67,9 +78,9 @@ class AudioFeedback:
     Runs TTS in a background thread to avoid blocking the render loop.
     """
 
-    def __init__(self) -> None:
-        """Initialise the TTS engine if available."""
-        self._enabled   = config.AUDIO_ENABLED and _TTS_AVAILABLE
+    def __init__(self, enabled: bool = True) -> None:
+        """Initialise the TTS engine if available (and *enabled*)."""
+        self._enabled   = enabled and config.AUDIO_ENABLED and _TTS_AVAILABLE
         self._cooldown  = config.AUDIO_COOLDOWN
         self._last_time: dict[str, float] = {}
         self._lock      = threading.Lock()
@@ -176,6 +187,9 @@ class StatsLogger:
 # Main application class
 # ---------------------------------------------------------------------------
 
+WINDOW_TITLE = "AI Fitness Tracker"
+
+
 class FitnessTrackerApp:
     """Orchestrates the full fitness-tracking session.
 
@@ -197,18 +211,37 @@ class FitnessTrackerApp:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def __init__(self) -> None:
-        """Initialise all subsystems."""
+    def __init__(
+        self,
+        exercise: Optional[str] = None,
+        video: Optional[str] = None,
+        camera: Optional[int] = None,
+        audio: bool = True,
+        headless: bool = False,
+    ) -> None:
+        """Initialise all subsystems.
+
+        Args:
+            exercise: Starting exercise key (default: first registry entry).
+            video:    Video file to process instead of the webcam.
+            camera:   Webcam index (default: config.CAMERA_INDEX).
+            audio:    Enable spoken feedback.
+            headless: Run without a window and print the final stats.
+        """
+        self._video    = video
+        self._camera   = config.CAMERA_INDEX if camera is None else camera
+        self._headless = headless
         self._detector = PoseDetector()
         self._renderer = UIRenderer()
-        self._audio    = AudioFeedback()
+        self._audio    = AudioFeedback(enabled=audio and not headless)
         self._logger   = StatsLogger()
 
         # Capture
         self._cap: Optional[cv2.VideoCapture] = None
+        self._video_time = 0.0                         # Seconds into the video
 
         # Exercise state
-        self._exercise_key  = next(iter(EXERCISES))    # First registry entry
+        self._exercise_key  = exercise or next(iter(EXERCISES))
         self._counter       = self._build_counter()
         self._session_saved = False                    # Guards duplicate saves
         self._load_history()
@@ -296,8 +329,7 @@ class FitnessTrackerApp:
         self._last_spoken_rep     = 0
         self._announced_sets = 0
         self._paused              = False
-        self._in_countdown        = True
-        self._countdown_start     = time.time()
+        self._begin_countdown()
 
         spec = EXERCISES[self._exercise_key]
         self._audio.say(f"Switching to {spec.name}. Get ready.")
@@ -308,43 +340,78 @@ class FitnessTrackerApp:
     # ------------------------------------------------------------------
 
     def run(self) -> None:
-        """Open the webcam and start the main processing loop."""
-        self._cap = cv2.VideoCapture(config.CAMERA_INDEX)
-        if not self._cap.isOpened():
-            print(f"[ERROR] Cannot open camera index {config.CAMERA_INDEX}.")
-            sys.exit(1)
+        """Open the webcam or video file and run the main processing loop."""
+        if self._video:
+            self._cap = cv2.VideoCapture(self._video)
+            if not self._cap.isOpened():
+                print(f"[ERROR] Cannot open video file {self._video}.")
+                sys.exit(1)
+            # Counters time reps / holds on the video's own timeline
+            fps   = self._cap.get(cv2.CAP_PROP_FPS) or config.TARGET_FPS
+            epoch = time.time()
+            clock.use(lambda: epoch + self._video_time)
+        else:
+            self._cap = cv2.VideoCapture(self._camera)
+            if not self._cap.isOpened():
+                print(f"[ERROR] Cannot open camera index {self._camera}.")
+                sys.exit(1)
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH,  config.FRAME_WIDTH)
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
+            self._cap.set(cv2.CAP_PROP_FPS,          config.TARGET_FPS)
 
-        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH,  config.FRAME_WIDTH)
-        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
-        self._cap.set(cv2.CAP_PROP_FPS,          config.TARGET_FPS)
+        if not self._headless:
+            cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(WINDOW_TITLE, config.FRAME_WIDTH, config.FRAME_HEIGHT)
 
-        title = "AI Fitness Tracker"
-        cv2.namedWindow(title, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(title, config.FRAME_WIDTH, config.FRAME_HEIGHT)
-
-        self._countdown_start = time.time()
+        self._begin_countdown()
         spec = EXERCISES[self._exercise_key]
-        self._audio.say(
-            f"Get ready. {spec.name} workout starts in {config.COUNTDOWN_SECONDS}."
-        )
+        if not self._video:
+            self._audio.say(
+                f"Get ready. {spec.name} workout starts in {config.COUNTDOWN_SECONDS}."
+            )
 
+        frame_idx = 0
         try:
             while self._running:
                 ok, frame = self._cap.read()
                 if not ok:
+                    if self._video:
+                        break                  # End of file = end of session
                     print("[WARN] Empty frame, retrying...")
                     continue
 
-                frame = cv2.flip(frame, 1)     # Mirror for natural feedback
+                if self._video:
+                    self._video_time = frame_idx / fps
+                    frame_idx += 1
+                else:
+                    frame = cv2.flip(frame, 1)     # Mirror for natural feedback
                 self._process_frame(frame)
 
+                if self._headless:
+                    continue
                 key = cv2.waitKey(1) & 0xFF
                 self._handle_key(key, frame)
 
-                if not cv2.getWindowProperty(title, cv2.WND_PROP_VISIBLE):
+                if not cv2.getWindowProperty(WINDOW_TITLE, cv2.WND_PROP_VISIBLE):
                     break
+        except KeyboardInterrupt:
+            pass
         finally:
             self._shutdown()
+
+    def _begin_countdown(self) -> None:
+        """Start the pre-set countdown (skipped for video input)."""
+        if self._video:
+            self._in_countdown = False
+            self._start_counting()
+        else:
+            self._in_countdown    = True
+            self._countdown_start = time.time()
+
+    def _start_counting(self) -> None:
+        """Countdown finished: reset the session timer and start counting."""
+        self._counter.stats.start_time = clock.now()
+        self._counter.on_session_start()
 
     # ------------------------------------------------------------------
     # Core per-frame pipeline
@@ -370,8 +437,7 @@ class FitnessTrackerApp:
             if countdown_val == 0:
                 self._in_countdown = False
                 self._audio.say("Go!")
-                self._counter.stats.start_time = time.time()  # Reset timer
-                self._counter.on_session_start()
+                self._start_counting()
 
         # --- Pose detection -----------------------------------------
         joints, annotated = self._detector.process(frame)
@@ -422,6 +488,9 @@ class FitnessTrackerApp:
         fields.update(self._counter.hud_fields())   # exercise-specific extras
         data = RenderData(**fields)
 
+        if self._headless:
+            return
+
         # ---- Render -------------------------------------------------
         output = self._renderer.render(annotated, data)
 
@@ -429,7 +498,7 @@ class FitnessTrackerApp:
         if self._writer is not None:
             self._writer.write(output)
 
-        cv2.imshow("AI Fitness Tracker", output)
+        cv2.imshow(WINDOW_TITLE, output)
 
     # ------------------------------------------------------------------
     # Audio dispatch
@@ -534,15 +603,14 @@ class FitnessTrackerApp:
             self._session_saved   = False
             self._load_history()
             self._announced_sets = 0
-            self._in_countdown    = True
-            self._countdown_start = time.time()
+            self._begin_countdown()
             self._last_spoken_rep = 0
             self._paused          = False
             self._audio.say("Session reset. Get ready.")
         elif key == ord("e"):                   # E → switch exercise
             self._switch_exercise()
         elif key == ord("s"):                   # S → screenshot
-            self._take_screenshot()
+            self._take_screenshot(frame)
         elif key == ord("v"):                   # V → toggle recording
             self._toggle_recording()
 
@@ -567,15 +635,12 @@ class FitnessTrackerApp:
             self._fps_buffer.pop(0)
         return sum(self._fps_buffer) / len(self._fps_buffer) if self._fps_buffer else 0.0
 
-    def _take_screenshot(self) -> None:
-        """Save the current frame as a PNG file in the screenshots folder."""
+    def _take_screenshot(self, frame: np.ndarray) -> None:
+        """Save *frame* (the current one) as a PNG in the screenshots folder."""
         ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         path = f"screenshots/{self._exercise_key}_{ts}.png"
-        if self._cap and self._cap.isOpened():
-            ok, frame = self._cap.read()
-            if ok:
-                cv2.imwrite(path, cv2.flip(frame, 1))
-                print(f"[INFO] Screenshot saved: {path}")
+        cv2.imwrite(path, frame)
+        print(f"[INFO] Screenshot saved: {path}")
 
     def _toggle_recording(self) -> None:
         """Start or stop video recording of the session."""
@@ -604,15 +669,60 @@ class FitnessTrackerApp:
 
         # Save stats if session has any reps
         self._save_session()
+        if self._video or self._headless:
+            print(self.summary())
+        clock.use_wall_clock()
 
-        cv2.destroyAllWindows()
+        if not self._headless:
+            cv2.destroyAllWindows()
         print("[INFO] Bye!")
+
+    def summary(self) -> str:
+        """Plain-text final stats for the current exercise."""
+        spec, c = EXERCISES[self._exercise_key], self._counter
+        best = c.best_metric()
+        avg  = c.avg_metric()
+        lines = [
+            "",
+            "=== SESSION SUMMARY ===",
+            f"Exercise : {spec.name}",
+            f"Reps     : {c.stats.total_reps}",
+            f"Sets     : {c.stats.sets_completed} / {spec.target_sets}",
+            f"Duration : {c.stats.elapsed_seconds:.1f} s",
+            f"Calories : {c.stats.calories:.1f} kcal",
+            f"Avg {spec.angle_label:<5}: {'-' if avg is None else f'{avg:.1f}'}",
+            f"{spec.best_label} : {'-' if best is None else spec.best_fmt.format(best)}",
+        ]
+        return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
+def parse_args(argv=None) -> argparse.Namespace:
+    """Command-line options."""
+    parser = argparse.ArgumentParser(description="AI Fitness Tracker")
+    parser.add_argument("--video", metavar="PATH",
+                        help="process a video file instead of the webcam")
+    parser.add_argument("--exercise", choices=list(EXERCISES),
+                        help="starting exercise (default: %(default)s)",
+                        default=next(iter(EXERCISES)))
+    parser.add_argument("--camera", type=int, metavar="N",
+                        help=f"webcam index (default: {config.CAMERA_INDEX})")
+    parser.add_argument("--no-audio", action="store_true", help="disable spoken feedback")
+    parser.add_argument("--headless", action="store_true",
+                        help="no window; print final stats (use with --video)")
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
-    app = FitnessTrackerApp()
+    args = parse_args()
+    app = FitnessTrackerApp(
+        exercise=args.exercise,
+        video=args.video,
+        camera=args.camera,
+        audio=not args.no_audio,
+        headless=args.headless,
+    )
     app.run()

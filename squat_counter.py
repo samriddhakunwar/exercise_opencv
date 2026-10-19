@@ -9,10 +9,10 @@ statistics, rep acceptance, and coaching infrastructure.
 
 from __future__ import annotations
 
-import time
 import enum
 from typing import Optional, Tuple
 
+import clock
 import config
 from angle_utils import (
     AngleSmoother,
@@ -139,7 +139,7 @@ class SquatCounter(ExerciseBase):
             self.coaching_message = "SQUAT DOWN"
             if smooth_angle < config.STANDING_ANGLE_MIN:
                 self._state          = SquatState.GOING_DOWN
-                self._rep_start_time = time.time()
+                self._rep_start_time = clock.now()
                 self._rep_min_angle  = smooth_angle
                 self._rep_hip_ok     = False
                 self._rep_stand_ok   = False
@@ -218,7 +218,7 @@ class SquatCounter(ExerciseBase):
         Returns:
             RepResult with counted status and form metadata.
         """
-        duration   = time.time() - (self._rep_start_time or time.time())
+        duration   = clock.now() - (self._rep_start_time or clock.now())
         min_angle  = self._rep_min_angle
 
         # Determine whether to count this rep

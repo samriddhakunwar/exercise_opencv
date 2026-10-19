@@ -20,9 +20,9 @@ from __future__ import annotations
 
 import enum
 import math
-import time
 from typing import Any, Dict, List, Optional, Tuple
 
+import clock
 import config
 from angle_utils import body_line_deviation, calculate_angle
 from exercise_base import ExerciseBase, FormIssue, RepResult
@@ -75,7 +75,7 @@ class PlankCounter(ExerciseBase):
         Returns:
             (RepResult when a set completes, active FormIssue, body angle).
         """
-        now = time.time()
+        now = clock.now()
         dt  = 0.0 if self._last_time is None else min(now - self._last_time,
                                                        config.PLANK_MAX_FRAME_DT)
         self._last_time = now

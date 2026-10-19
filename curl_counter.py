@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import enum
 import math
-import time
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
+import clock
 import config
 from angle_utils import AngleSmoother, calculate_angle, euclidean_distance, map_range
 from exercise_base import FormIssue, RepResult, SidedExerciseBase
@@ -161,7 +161,7 @@ class CurlCounter(SidedExerciseBase):
                 arm.state = CurlState.DOWN
                 if arm.drifted:
                     return self._reject(FormIssue.ELBOW_DRIFT, arm), FormIssue.ELBOW_DRIFT
-                duration = time.time() - arm.start_time
+                duration = clock.now() - arm.start_time
                 self._accept_side_rep(side, duration, arm.min_angle)
                 self.coaching_message = ("SET COMPLETE!" if self.stats.reps_in_current_set == 0
                                          else f"GOOD {side.upper()} REP! ✓")
@@ -178,7 +178,7 @@ class CurlCounter(SidedExerciseBase):
     @staticmethod
     def _start_rep(arm: _Arm, angle: float, shoulder, elbow) -> None:
         """Record the baseline for a new rep."""
-        arm.start_time    = time.time()
+        arm.start_time    = clock.now()
         arm.min_angle     = angle
         arm.start_elbow_y = elbow[1]
         arm.upper_len     = euclidean_distance(shoulder, elbow)
@@ -196,4 +196,4 @@ class CurlCounter(SidedExerciseBase):
     def _reject(self, issue: FormIssue, arm: _Arm) -> RepResult:
         """Build a rejected RepResult and update the coaching message."""
         self.coaching_message = f"BAD REP — {issue.value}"
-        return RepResult(False, issue, arm.min_angle, time.time() - arm.start_time)
+        return RepResult(False, issue, arm.min_angle, clock.now() - arm.start_time)

@@ -16,12 +16,12 @@ New exercises should inherit from ExerciseBase and implement
 
 from __future__ import annotations
 
-import time
 import enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+import clock
 import config
 
 
@@ -145,7 +145,7 @@ class SessionStats:
     sets_completed:  int   = 0
     rep_durations:   List[float] = field(default_factory=list)
     depths:          List[float] = field(default_factory=list)
-    start_time:      float = field(default_factory=time.time)
+    start_time:      float = field(default_factory=clock.now)
     calories:        float = 0.0
     # Runtime targets — set via configure() by each exercise
     _target_reps:    int   = field(default=config.TARGET_REPS, repr=False)
@@ -181,7 +181,7 @@ class SessionStats:
     @property
     def elapsed_seconds(self) -> float:
         """Seconds elapsed since the session started."""
-        return time.time() - self.start_time
+        return clock.now() - self.start_time
 
     @property
     def reps_in_current_set(self) -> int:

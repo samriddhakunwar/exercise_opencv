@@ -2,8 +2,8 @@
 
 import pytest
 
+import clock as clock_module
 import config
-import plank_counter
 from exercise_base import FormIssue
 from plank_counter import PlankCounter, PlankState
 from joint_factory import FakeClock, feed_timed, mirror, pushup_pose, squat_pose
@@ -23,7 +23,7 @@ def standing(seconds: float):
 @pytest.fixture
 def clock(monkeypatch):
     c = FakeClock()
-    monkeypatch.setattr(plank_counter.time, "time", c)
+    monkeypatch.setattr(clock_module, "_source", c)
     return c
 
 
