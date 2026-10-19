@@ -29,6 +29,47 @@ import config
 # Shared data structures
 # ---------------------------------------------------------------------------
 
+@dataclass
+class JointData:
+    """Container for key joint positions (normalised 0-1 coords).
+
+    Attributes:
+        left_shoulder:   (x, y) left shoulder.
+        right_shoulder:  (x, y) right shoulder.
+        left_elbow:      (x, y) left elbow.
+        right_elbow:     (x, y) right elbow.
+        left_wrist:      (x, y) left wrist.
+        right_wrist:     (x, y) right wrist.
+        left_hip:        (x, y) left hip.
+        right_hip:       (x, y) right hip.
+        left_knee:       (x, y) left knee.
+        right_knee:      (x, y) right knee.
+        left_ankle:      (x, y) left ankle.
+        right_ankle:     (x, y) right ankle.
+        left_visibility:      Visibility score for the left leg chain.
+        right_visibility:     Visibility score for the right leg chain.
+        left_arm_visibility:  Visibility score for the left arm chain.
+        right_arm_visibility: Visibility score for the right arm chain.
+    """
+    left_shoulder:        Tuple[float, float] = (0.0, 0.0)
+    right_shoulder:       Tuple[float, float] = (0.0, 0.0)
+    left_elbow:           Tuple[float, float] = (0.0, 0.0)
+    right_elbow:          Tuple[float, float] = (0.0, 0.0)
+    left_wrist:           Tuple[float, float] = (0.0, 0.0)
+    right_wrist:          Tuple[float, float] = (0.0, 0.0)
+    left_hip:             Tuple[float, float] = (0.0, 0.0)
+    right_hip:            Tuple[float, float] = (0.0, 0.0)
+    left_knee:            Tuple[float, float] = (0.0, 0.0)
+    right_knee:           Tuple[float, float] = (0.0, 0.0)
+    left_ankle:           Tuple[float, float] = (0.0, 0.0)
+    right_ankle:          Tuple[float, float] = (0.0, 0.0)
+    left_visibility:      float = 0.0
+    right_visibility:     float = 0.0
+    left_arm_visibility:  float = 0.0
+    right_arm_visibility: float = 0.0
+    raw_landmarks:        Optional[object] = field(default=None, repr=False)
+
+
 class FormIssue(str, enum.Enum):
     """Enumeration of detectable form problems (shared across all exercises)."""
     NONE           = ""

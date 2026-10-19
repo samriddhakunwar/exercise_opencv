@@ -10,7 +10,6 @@ from __future__ import annotations
 # Patches the protobuf/TensorFlow conflict before mediapipe loads.
 import _mp_compat  # noqa: F401
 
-from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
 import cv2
@@ -19,6 +18,7 @@ import numpy as np
 
 import config
 from angle_utils import LandmarkSmoother
+from exercise_base import JointData  # noqa: F401  (re-exported)
 
 # ---------------------------------------------------------------------------
 # Convenience aliases
@@ -29,47 +29,6 @@ mp_drawing_styles = mp.solutions.drawing_styles
 
 # MediaPipe landmark indices we care about
 _LM = mp_pose.PoseLandmark
-
-
-@dataclass
-class JointData:
-    """Container for key joint positions (normalised 0-1 coords).
-
-    Attributes:
-        left_shoulder:   (x, y) left shoulder.
-        right_shoulder:  (x, y) right shoulder.
-        left_elbow:      (x, y) left elbow.
-        right_elbow:     (x, y) right elbow.
-        left_wrist:      (x, y) left wrist.
-        right_wrist:     (x, y) right wrist.
-        left_hip:        (x, y) left hip.
-        right_hip:       (x, y) right hip.
-        left_knee:       (x, y) left knee.
-        right_knee:      (x, y) right knee.
-        left_ankle:      (x, y) left ankle.
-        right_ankle:     (x, y) right ankle.
-        left_visibility:      Visibility score for the left leg chain.
-        right_visibility:     Visibility score for the right leg chain.
-        left_arm_visibility:  Visibility score for the left arm chain.
-        right_arm_visibility: Visibility score for the right arm chain.
-    """
-    left_shoulder:        Tuple[float, float] = (0.0, 0.0)
-    right_shoulder:       Tuple[float, float] = (0.0, 0.0)
-    left_elbow:           Tuple[float, float] = (0.0, 0.0)
-    right_elbow:          Tuple[float, float] = (0.0, 0.0)
-    left_wrist:           Tuple[float, float] = (0.0, 0.0)
-    right_wrist:          Tuple[float, float] = (0.0, 0.0)
-    left_hip:             Tuple[float, float] = (0.0, 0.0)
-    right_hip:            Tuple[float, float] = (0.0, 0.0)
-    left_knee:            Tuple[float, float] = (0.0, 0.0)
-    right_knee:           Tuple[float, float] = (0.0, 0.0)
-    left_ankle:           Tuple[float, float] = (0.0, 0.0)
-    right_ankle:          Tuple[float, float] = (0.0, 0.0)
-    left_visibility:      float = 0.0
-    right_visibility:     float = 0.0
-    left_arm_visibility:  float = 0.0
-    right_arm_visibility: float = 0.0
-    raw_landmarks:        Optional[object] = field(default=None, repr=False)
 
 
 class PoseDetector:
