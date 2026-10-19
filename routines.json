@@ -1,0 +1,38 @@
+{
+  "beginner": {
+    "name": "Beginner",
+    "steps": [
+      {"exercise": "squat",  "sets": 2, "reps": 10},
+      {"rest": 30},
+      {"exercise": "pushup", "sets": 2, "reps": 8},
+      {"rest": 30},
+      {"exercise": "plank",  "sets": 2, "seconds": 20}
+    ]
+  },
+  "fullbody": {
+    "name": "Full Body",
+    "steps": [
+      {"exercise": "squat",  "sets": 3, "reps": 15},
+      {"rest": 30},
+      {"exercise": "pushup", "sets": 3, "reps": 20},
+      {"rest": 45},
+      {"exercise": "lunge",  "sets": 3, "reps": 10},
+      {"rest": 45},
+      {"exercise": "curl",   "sets": 3, "reps": 12},
+      {"rest": 45},
+      {"exercise": "plank",  "sets": 3, "seconds": 30}
+    ]
+  },
+  "cardio": {
+    "name": "Cardio Blast",
+    "steps": [
+      {"exercise": "jumpingjack", "sets": 3, "reps": 30},
+      {"rest": 20},
+      {"exercise": "highknee",    "sets": 3, "reps": 20},
+      {"rest": 20},
+      {"exercise": "squat",       "sets": 2, "reps": 20},
+      {"rest": 30},
+      {"exercise": "jumpingjack", "sets": 2, "reps": 40}
+    ]
+  }
+}

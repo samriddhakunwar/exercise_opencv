@@ -276,6 +276,27 @@ class ExerciseBase(ABC):
         """True when the workout for this exercise is finished."""
         return self.stats.workout_complete
 
+    def set_targets(
+        self,
+        reps: Optional[int] = None,
+        sets: Optional[int] = None,
+        seconds: Optional[float] = None,
+    ) -> None:
+        """Override this instance's targets (workout routines) and reset.
+
+        Args:
+            reps:    Reps per set (per side for sided exercises).
+            sets:    Total sets.
+            seconds: Hold target for timed exercises (plank).
+        """
+        if reps is not None:
+            self.TARGET_REPS = reps
+        if sets is not None:
+            self.TARGET_SETS = sets
+        if seconds is not None:
+            self.TARGET_SECONDS = seconds
+        self.reset()
+
     def on_session_start(self) -> None:
         """Called once when the countdown ends and counting begins."""
 

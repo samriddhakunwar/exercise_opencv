@@ -20,13 +20,15 @@ Command line
                                           no window; print final stats
     --camera N   override CAMERA_INDEX     --no-audio   disable TTS
     --calibrate  run calibration for the starting exercise first
+    python app.py --routine fullbody      run a routine from routines.json
 
 Keyboard shortcuts
 ~~~~~~~~~~~~~~~~~~
     Space  → Pause / Resume
     R      → Reset current session
     C      → Calibrate thresholds for the current exercise
-    E      → Switch exercise (cycles through exercises.EXERCISES)
+    E      → Switch exercise (cycles through exercises.EXERCISES);
+             in a routine: skip to the next step
     S      → Save screenshot
     V      → Toggle video recording
     Q / Esc→ Quit
@@ -40,6 +42,7 @@ import _mp_compat  # noqa: F401
 
 import sys
 import csv
+import math
 import sqlite3
 import argparse
 import os
@@ -56,6 +59,7 @@ import calibration
 import clock
 import config
 import history
+import routine as routines
 from pose_detector import PoseDetector
 from exercise_base import ExerciseBase, FormIssue, RepResult
 from exercises import EXERCISES
@@ -222,6 +226,7 @@ class FitnessTrackerApp:
         audio: bool = True,
         headless: bool = False,
         calibrate: bool = False,
+        routine: Optional[str] = None,
     ) -> None:
         """Initialise all subsystems.
 
@@ -232,6 +237,7 @@ class FitnessTrackerApp:
             audio:    Enable spoken feedback.
             headless: Run without a window and print the final stats.
             calibrate: Start with calibration for the starting exercise.
+            routine:  Name of a routine in routines.json to run.
         """
         self._video    = video
         self._camera   = config.CAMERA_INDEX if camera is None else camera
@@ -252,6 +258,16 @@ class FitnessTrackerApp:
         self._calibrate_on_start = calibrate
         self._calibrator: Optional[calibration.Calibrator] = None
         self._cal_counter: Optional[ExerciseBase] = None
+
+        # Routine (optional): its first exercise step sets the exercise
+        self._routine: Optional[routines.RoutineRunner] = None
+        self._rest_until: Optional[float] = None
+        self._routine_summary: tuple = ()
+        if routine:
+            self._routine = routines.RoutineRunner(routines.load_routines()[routine])
+            while self._routine.step.is_rest:      # tolerate leading rests
+                self._routine.advance()
+            exercise = self._routine.step.exercise
 
         # Exercise state
         self._exercise_key  = exercise or next(iter(EXERCISES))
@@ -288,8 +304,12 @@ class FitnessTrackerApp:
     # ------------------------------------------------------------------
 
     def _build_counter(self) -> ExerciseBase:
-        """Create and return the counter for the current exercise."""
-        return EXERCISES[self._exercise_key].factory()
+        """Create the counter for the current exercise (routine targets applied)."""
+        counter = EXERCISES[self._exercise_key].factory()
+        step = self._routine.step if self._routine else None
+        if step is not None and step.exercise == self._exercise_key:
+            counter.set_targets(step.reps, step.sets, step.seconds)
+        return counter
 
     def _save_session(self) -> None:
         """Save the current session once: CSV + one history row."""
@@ -335,7 +355,15 @@ class FitnessTrackerApp:
         self._save_session()
 
         keys = list(EXERCISES)
-        self._exercise_key  = keys[(keys.index(self._exercise_key) + 1) % len(keys)]
+        self._set_exercise(keys[(keys.index(self._exercise_key) + 1) % len(keys)])
+
+        spec = EXERCISES[self._exercise_key]
+        self._audio.say(f"Switching to {spec.name}. Get ready.")
+        print(f"[INFO] Exercise switched to: {spec.name}")
+
+    def _set_exercise(self, key: str) -> None:
+        """Make *key* the active exercise with a fresh counter and countdown."""
+        self._exercise_key  = key
         self._counter       = self._build_counter()
         self._session_saved       = False
         self._load_history()
@@ -344,9 +372,50 @@ class FitnessTrackerApp:
         self._paused              = False
         self._begin_countdown()
 
-        spec = EXERCISES[self._exercise_key]
-        self._audio.say(f"Switching to {spec.name}. Get ready.")
-        print(f"[INFO] Exercise switched to: {spec.name}")
+    # ------------------------------------------------------------------
+    # Routines
+    # ------------------------------------------------------------------
+
+    def _advance_routine(self) -> None:
+        """Record the finished exercise step and move to the next step."""
+        r = self._routine
+        r.record(self._exercise_key, self._counter, self._counter.stats.elapsed_seconds)
+        self._enter_step(r.advance())
+
+    def _enter_step(self, step: Optional[routines.Step]) -> None:
+        """Start a rest, the next exercise, or finish the routine."""
+        r = self._routine
+        if step is None:
+            self._finish_routine()
+        elif step.is_rest:
+            self._rest_until = clock.now() + step.rest
+            nxt = r.next_exercise()
+            self._audio.say(f"Rest {step.rest:.0f} seconds."
+                            + (f" Next: {EXERCISES[nxt].name}." if nxt else ""))
+        else:
+            self._rest_until = None
+            self._set_exercise(step.exercise)
+            self._audio.say(f"Next exercise: {EXERCISES[step.exercise].name}. Get ready.")
+            print(f"[INFO] Routine step: {EXERCISES[step.exercise].name}")
+
+    def _finish_routine(self) -> None:
+        """Announce, save the combined summary and show it."""
+        self._rest_until = None
+        self._audio.say("Routine complete! Great job!")
+        self._write_routine_summary()
+        self._routine_summary = tuple(self._routine.summary_lines())
+        if self._video:
+            self._running = False
+
+    def _write_routine_summary(self) -> None:
+        """Save the combined routine CSV and print it (once)."""
+        if not self._routine.results:
+            return
+        path = self._routine.write_summary()
+        print(f"[INFO] Routine summary saved to {path}")
+        print(f"\n=== ROUTINE: {self._routine.routine.name} ===")
+        for label, value in self._routine.summary_lines():
+            print(f"{label:<14}: {value}")
 
     # ------------------------------------------------------------------
     # Main loop
@@ -499,6 +568,13 @@ class FitnessTrackerApp:
         # --- Pose detection -----------------------------------------
         joints, annotated = self._detector.process(frame)
 
+        resting = self._rest_until is not None
+        if resting:
+            rest_left = self._rest_until - clock.now()
+            if rest_left <= 0:
+                self._enter_step(self._routine.advance())
+                resting = False
+
         calibrating = self._calibrator is not None
         if calibrating:
             cal_message = self._calibrator.message
@@ -511,6 +587,8 @@ class FitnessTrackerApp:
 
         if (
             not calibrating
+            and not resting
+            and not self._routine_summary
             and not self._paused
             and not self._in_countdown
             and not self._counter.session_complete
@@ -524,6 +602,12 @@ class FitnessTrackerApp:
             if self._counter.session_complete:
                 self._audio.say(f"{spec.name} workout complete. Great job!")
                 self._save_session()
+                if self._routine:
+                    self._advance_routine()
+
+        # The routine may have moved on to another exercise this frame
+        stats = self._counter.stats
+        spec  = EXERCISES[self._exercise_key]
 
         # ---- Build render data --------------------------------------
         fields = dict(
@@ -531,8 +615,8 @@ class FitnessTrackerApp:
             total_reps       = stats.total_reps,
             current_set      = stats.current_set,
             sets_completed   = stats.sets_completed,
-            target_reps      = spec.target_reps,
-            target_sets      = spec.target_sets,
+            target_reps      = self._counter.TARGET_REPS,
+            target_sets      = self._counter.TARGET_SETS,
             coaching_msg     = self._counter.coaching_message,
             form_issue       = form_issue.value,
             knee_angle       = current_angle,
@@ -550,9 +634,19 @@ class FitnessTrackerApp:
             angle_label      = spec.angle_label,
             bar_label        = spec.bar_label,
             last_session     = self._last_text,
-            banner           = "NEW RECORD!" if self._new_record else "",
+            banner           = ("NEW RECORD!" if self._new_record
+                                else self._routine.progress_text() if self._routine
+                                else ""),
         )
         fields.update(self._counter.hud_fields())   # exercise-specific extras
+        if resting:
+            nxt = self._routine.next_exercise()
+            fields.update(countdown=max(1, math.ceil(rest_left)), session_complete=False,
+                          next_exercise=EXERCISES[nxt].name if nxt else "",
+                          last_session="")
+        if self._routine_summary:
+            fields.update(session_complete=True, summary_lines=self._routine_summary,
+                          summary_title=f"{self._routine.routine.name.upper()} COMPLETE!")
         if calibrating:
             fields.update(coaching_msg=cal_message, banner="CALIBRATING", countdown=0,
                           knee_angle=cal_metric)
@@ -677,9 +771,15 @@ class FitnessTrackerApp:
             self._last_spoken_rep = 0
             self._paused          = False
             self._audio.say("Session reset. Get ready.")
-        elif key == ord("e"):                   # E → switch exercise
+        elif key == ord("e"):                   # E → switch exercise / skip step
             self._calibrator = None
-            self._switch_exercise()
+            if self._routine is None:
+                self._switch_exercise()
+            elif self._rest_until is not None:
+                self._enter_step(self._routine.advance())      # skip the rest
+            elif not self._routine.done:
+                self._save_session()
+                self._advance_routine()
         elif key == ord("c"):                   # C → calibrate / cancel
             if self._calibrator is None:
                 self._start_calibration()
@@ -749,6 +849,13 @@ class FitnessTrackerApp:
         self._save_session()
         if self._video or self._headless:
             print(self.summary())
+        if self._routine and not self._routine.done:
+            # Stopped mid-routine: keep the step in progress (unless resting —
+            # the previous step is already recorded) and save what was done
+            if self._rest_until is None and self._counter.record_value() > 0:
+                self._routine.record(self._exercise_key, self._counter,
+                                     self._counter.stats.elapsed_seconds)
+            self._write_routine_summary()
         clock.use_wall_clock()
 
         if not self._headless:
@@ -765,7 +872,7 @@ class FitnessTrackerApp:
             "=== SESSION SUMMARY ===",
             f"Exercise : {spec.name}",
             f"Reps     : {c.stats.total_reps}",
-            f"Sets     : {c.stats.sets_completed} / {spec.target_sets}",
+            f"Sets     : {c.stats.sets_completed} / {c.TARGET_SETS}",
             f"Duration : {c.stats.elapsed_seconds:.1f} s",
             f"Calories : {c.stats.calories:.1f} kcal",
             f"Avg {spec.angle_label:<5}: {'-' if avg is None else f'{avg:.1f}'}",
@@ -793,6 +900,8 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="no window; print final stats (use with --video)")
     parser.add_argument("--calibrate", action="store_true",
                         help="calibrate thresholds for the starting exercise first")
+    parser.add_argument("--routine", metavar="NAME",
+                        help="run a workout routine from routines.json")
     return parser.parse_args(argv)
 
 
@@ -805,5 +914,6 @@ if __name__ == "__main__":
         audio=not args.no_audio,
         headless=args.headless,
         calibrate=args.calibrate,
+        routine=args.routine,
     )
     app.run()

@@ -166,6 +166,10 @@ class RenderData:
     # History
     last_session:     str   = ""        # "Last time: …" (countdown screen)
     banner:           str   = ""        # top-centre badge ("NEW RECORD!", "CALIBRATING")
+    # Routines
+    next_exercise:    str   = ""        # set during a rest → countdown shows "REST"
+    summary_title:    str   = ""        # overrides the summary screen title …
+    summary_lines:    tuple = ()        # … and its (label, value) rows
 
 
 # ---------------------------------------------------------------------------
@@ -470,7 +474,8 @@ class UIRenderer:
                           (self._w // 2 - nw // 2, self._h // 2 + nh // 2),
                           scale, col, 8, shadow_offset=6)  # type: ignore[arg-type]
 
-        ready = f"GET READY TO {data.exercise_name.upper()}"
+        ready = (f"REST  -  NEXT: {data.next_exercise}" if data.next_exercise
+                 else f"GET READY TO {data.exercise_name.upper()}")
         rw, _ = _text_size(ready, 0.9, 2)
         _draw_text_shadow(frame, ready,
                           (self._w // 2 - rw // 2, self._h // 4),
@@ -501,8 +506,8 @@ class UIRenderer:
 
         cx = self._w // 2
 
-        # Title — exercise specific
-        title = f"{data.exercise_name} COMPLETE!"
+        # Title — exercise specific (or the routine's)
+        title = data.summary_title or f"{data.exercise_name} COMPLETE!"
         tw, _ = _text_size(title, 2.0, 3)
         _draw_text_shadow(frame, title, (cx - tw // 2, 100), 2.0, config.COLOR_GREEN, 3)
 
@@ -513,7 +518,9 @@ class UIRenderer:
         _alpha_rect(frame, bx1, by1, bx1 + box_w, by1 + box_h,
                     config.COLOR_SEMI_BG, alpha=0.85)
 
-        if data.is_timed:
+        if data.summary_lines:
+            lines = [(label, value, config.COLOR_WHITE) for label, value in data.summary_lines]
+        elif data.is_timed:
             lines = [
                 ("Sets Completed",  f"{data.sets_completed} / {data.target_sets}", config.COLOR_GREEN),
                 ("Longest Hold",    f"{data.best_hold:.1f}s",       config.COLOR_GREEN),
@@ -553,7 +560,8 @@ class UIRenderer:
             y += 48
 
         # Footer
-        footer = "Press  R  to restart  |  Q  to quit"
+        footer = ("Press  Q  to quit" if data.summary_lines
+                  else "Press  R  to restart  |  Q  to quit")
         fw, _ = _text_size(footer, 0.7, 1)
         _draw_text_shadow(frame, footer,
                           (cx - fw // 2, self._h - 30), 0.7, config.COLOR_WHITE, 1)

@@ -213,3 +213,8 @@ CALIBRATION_FILE: str = "data/calibration.json"
 CALIBRATION_STAND_SECONDS: float = 3.0   # Hold-still phase
 CALIBRATION_REPS: int = 2                # Slow full-range reps to record
 CALIBRATION_TIMEOUT: float = 30.0        # Max seconds for the reps phase
+
+# ---------------------------------------------------------------------------
+# Workout routines (--routine NAME)
+# ---------------------------------------------------------------------------
+ROUTINES_FILE: str = "routines.json"

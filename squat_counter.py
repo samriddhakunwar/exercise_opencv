@@ -195,7 +195,7 @@ class SquatCounter(ExerciseBase):
     def reset(self) -> None:
         """Reset all counters, stats, and FSM state."""
         self.stats             = SessionStats()
-        self.stats.configure(config.TARGET_REPS, config.TARGET_SETS)
+        self.stats.configure(self.TARGET_REPS, self.TARGET_SETS)
         self._state            = SquatState.STANDING
         self._rep_start_time   = None
         self._rep_min_angle    = 180.0
@@ -235,7 +235,7 @@ class SquatCounter(ExerciseBase):
         if counted:
             self._accept_rep(
                 duration, min_angle, config.CALORIES_PER_SQUAT,
-                config.TARGET_REPS, config.TARGET_SETS,
+                self.TARGET_REPS, self.TARGET_SETS,
             )
             self.coaching_message = "GOOD REP! ✓"
             if self.stats.reps_in_current_set == 0 and self.stats.sets_completed > 0:

@@ -118,7 +118,7 @@ class HighKneeCounter(ExerciseBase):
             cardio_duration: Duration of cardio session in seconds.
         """
         super().__init__()
-        self.stats.configure(config.HIGH_KNEE_TARGET_REPS, config.HIGH_KNEE_TARGET_SETS)
+        self.stats.configure(self.TARGET_REPS, self.TARGET_SETS)
 
         # --- Mode ---
         self.mode: HighKneeMode = mode
@@ -339,7 +339,7 @@ class HighKneeCounter(ExerciseBase):
                     duration = clock.now() - (self._rep_start_time or clock.now())
                     self._accept_rep(
                         duration, active_lift, config.CALORIES_PER_HIGH_KNEE,
-                        config.HIGH_KNEE_TARGET_REPS, config.HIGH_KNEE_TARGET_SETS,
+                        self.TARGET_REPS, self.TARGET_SETS,
                     )
                     # Update calorie count to use per-lift rate (not per-cycle)
                     self.stats.calories = (
@@ -362,7 +362,7 @@ class HighKneeCounter(ExerciseBase):
     def reset(self) -> None:
         """Reset all counters, stats, and FSM state."""
         self.stats = SessionStats()
-        self.stats.configure(config.HIGH_KNEE_TARGET_REPS, config.HIGH_KNEE_TARGET_SETS)
+        self.stats.configure(self.TARGET_REPS, self.TARGET_SETS)
 
         self._left_state  = LegState.READY
         self._right_state = LegState.DOWN
@@ -547,7 +547,7 @@ class HighKneeCounter(ExerciseBase):
         if just_lifted:
             reps = self.stats.total_reps
             if self.mode == HighKneeMode.REP:
-                target = config.HIGH_KNEE_TARGET_REPS
+                target = self.TARGET_REPS
                 halfway = target // 2
                 if reps > 0 and reps % target == halfway:
                     self.coaching_message = "HALFWAY THERE!"

@@ -40,6 +40,7 @@ class PlankCounter(ExerciseBase):
 
     TARGET_REPS      = 1          # One hold per set
     TARGET_SETS      = config.PLANK_TARGET_SETS
+    TARGET_SECONDS   = config.PLANK_TARGET_SECONDS
     CALORIES_PER_REP = 0.0        # Calories are per second, see below
     BEST_LOWER_IS_BETTER = False  # best_metric is hold time
 
@@ -122,7 +123,7 @@ class PlankCounter(ExerciseBase):
             result = self._check_milestones()
 
         self.stats.calories = self.total_hold * config.CALORIES_PER_PLANK_SECOND
-        self.depth_progress = min(1.0, self.hold_seconds / config.PLANK_TARGET_SECONDS)
+        self.depth_progress = min(1.0, self.hold_seconds / self.TARGET_SECONDS)
         return result, issue, body_angle
 
     def reset(self) -> None:
@@ -151,7 +152,7 @@ class PlankCounter(ExerciseBase):
         return {
             "is_timed":       True,
             "hold_seconds":   self.hold_seconds,
-            "target_seconds": float(config.PLANK_TARGET_SECONDS),
+            "target_seconds": float(self.TARGET_SECONDS),
             "best_hold":      self.longest_hold,
         }
 
@@ -178,7 +179,7 @@ class PlankCounter(ExerciseBase):
 
     def _check_milestones(self) -> Optional[RepResult]:
         """Halfway cue, set completion at the target, and coaching text."""
-        target = config.PLANK_TARGET_SECONDS
+        target = self.TARGET_SECONDS
         if not self._halfway_said and self.hold_seconds >= target / 2:
             self._halfway_said = True
             self._cues.append("Halfway there")
