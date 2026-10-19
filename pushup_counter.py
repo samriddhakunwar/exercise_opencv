@@ -31,13 +31,12 @@ distinguished without depending on which axis is vertical.
 
 from __future__ import annotations
 
-import math
 import time
 import enum
 from typing import Optional, Tuple
 
 import config
-from angle_utils import AngleSmoother, calculate_angle, map_range
+from angle_utils import AngleSmoother, body_line_deviation, calculate_angle, map_range
 from exercise_base import ExerciseBase, FormIssue, RepResult, SessionStats
 
 
@@ -299,8 +298,8 @@ class PushUpCounter(ExerciseBase):
         full body length.  This is robust for any body orientation including
         horizontal push-up position where the old y-span denominator breaks.
 
-        2-D cross product gives the signed deviation so sag and pike can be
-        distinguished without relying on which axis is "vertical" in frame.
+        The signed deviation (see ``angle_utils.body_line_deviation``) is
+        positive for a sagging hip whichever way the user faces the camera.
 
         Args:
             shoulder: Shoulder (x, y) in image coordinates.
@@ -310,23 +309,8 @@ class PushUpCounter(ExerciseBase):
         Returns:
             (is_ok, FormIssue) — FormIssue.NONE when the body is straight.
         """
-        # Direction vector of the body line
-        dx = ankle[0] - shoulder[0]
-        dy = ankle[1] - shoulder[1]
-        body_len = math.sqrt(dx * dx + dy * dy)
+        deviation = body_line_deviation(shoulder, hip, ankle)
 
-        if body_len < 1e-3:
-            return True, FormIssue.NONE           # Can't compute — give benefit of doubt
-
-        # Perpendicular (signed) distance from hip to the shoulder→ankle line,
-        # normalised by body length so scale doesn't matter.
-        # cross = (ankle - shoulder) × (hip - shoulder)
-        cross = dx * (hip[1] - shoulder[1]) - dy * (hip[0] - shoulder[0])
-        deviation = cross / (body_len * body_len)
-
-        # Positive cross → hip is "above" the line in right-hand convention
-        # (which direction that is in image space depends on camera orientation;
-        # we rely on the magnitude and use a generous threshold).
         if deviation > config.PUSHUP_HIP_SAG_THRESHOLD:
             return False, FormIssue.HIPS_UP
         if deviation < -config.PUSHUP_PIKE_THRESHOLD:

@@ -15,7 +15,7 @@ Keyboard shortcuts
 ~~~~~~~~~~~~~~~~~~
     Space  → Pause / Resume
     R      → Reset current session
-    E      → Switch exercise (Squat → Push-Up → High Knees)
+    E      → Switch exercise (cycles through exercises.EXERCISES)
     S      → Save screenshot
     V      → Toggle video recording
     Q / Esc→ Quit
@@ -227,7 +227,7 @@ class FitnessTrackerApp:
 
         # Rep audio tracking
         self._last_spoken_rep  = 0
-        self._set_complete_spoken = False
+        self._announced_sets = 0
 
         # Dirs
         Path("screenshots").mkdir(exist_ok=True)
@@ -261,7 +261,7 @@ class FitnessTrackerApp:
         self._counter       = self._build_counter()
         self._session_saved       = False
         self._last_spoken_rep     = 0
-        self._set_complete_spoken = False
+        self._announced_sets = 0
         self._paused              = False
         self._in_countdown        = True
         self._countdown_start     = time.time()
@@ -417,10 +417,11 @@ class FitnessTrackerApp:
                 rep_num = stats.total_reps
                 if rep_num != self._last_spoken_rep:
                     self._last_spoken_rep = rep_num
-                    self._audio.say(str(rep_num))
-                    target  = EXERCISES[self._exercise_key].target_reps
-                    halfway = target // 2
-                    if rep_num % target == halfway:
+                    phrase = self._counter.rep_announcement()
+                    if phrase:
+                        self._audio.say(phrase)
+                    halfway = stats.target_reps // 2
+                    if halfway and stats.reps_in_current_set == halfway:
                         self._audio.say("Halfway there!")
             else:
                 # Bad rep feedback — covers all exercises
@@ -442,21 +443,28 @@ class FitnessTrackerApp:
                     FormIssue.ALTERNATE_LEGS:     "Alternate legs",
                     FormIssue.MOVE_FASTER:        "Move faster",
                     FormIssue.SLOW_DOWN:          "Slow down slightly",
+                    # Jumping jack issues
+                    FormIssue.ARMS_OVERHEAD:      "Arms all the way up",
+                    FormIssue.FEET_WIDER:         "Jump your feet wider",
+                    # Curl issues
+                    FormIssue.ELBOW_DRIFT:        "Keep your elbows still",
+                    FormIssue.EXTEND_ARM:         "Extend your arm fully",
+                    FormIssue.CURL_HIGHER:        "Curl all the way up",
+                    # Lunge issues
+                    FormIssue.KNEE_OVER_TOES:     "Keep your knee behind your toes",
                 }.get(rep_result.form_issue, "Bad form")
                 self._audio.say(phrase)
 
+        # Mid-rep cues queued by the counter ("Hips up", "Halfway there" …)
+        for cue in self._counter.pop_cues():
+            self._audio.say(cue)
+
         # Set completion announcement (workout completion is announced in
         # _process_frame via counter.session_complete)
-        if (
-            stats.sets_completed > 0
-            and stats.reps_in_current_set == 0
-            and not self._set_complete_spoken
-        ):
+        if stats.sets_completed > self._announced_sets:
+            self._announced_sets = stats.sets_completed
             if not stats.workout_complete:
                 self._audio.say(f"Set {stats.sets_completed} complete. Rest up!")
-            self._set_complete_spoken = True
-        elif stats.reps_in_current_set > 0:
-            self._set_complete_spoken = False
 
     # ------------------------------------------------------------------
     # Keyboard input
@@ -487,7 +495,7 @@ class FitnessTrackerApp:
         elif key == ord("r"):                   # R → reset session
             self._counter.reset()
             self._session_saved   = False
-            self._set_complete_spoken = False
+            self._announced_sets = 0
             self._in_countdown    = True
             self._countdown_start = time.time()
             self._last_spoken_rep = 0

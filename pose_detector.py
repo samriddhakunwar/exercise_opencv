@@ -181,6 +181,7 @@ class PoseDetector:
         )
 
         return JointData(
+            nose                 = lm(_LM.NOSE),
             left_shoulder        = lm(_LM.LEFT_SHOULDER),
             right_shoulder       = lm(_LM.RIGHT_SHOULDER),
             left_elbow           = lm(_LM.LEFT_ELBOW),
@@ -193,6 +194,8 @@ class PoseDetector:
             right_knee           = lm(_LM.RIGHT_KNEE),
             left_ankle           = lm(_LM.LEFT_ANKLE),
             right_ankle          = lm(_LM.RIGHT_ANKLE),
+            left_foot            = lm(_LM.LEFT_FOOT_INDEX),
+            right_foot           = lm(_LM.RIGHT_FOOT_INDEX),
             left_visibility      = left_vis,
             right_visibility     = right_vis,
             left_arm_visibility  = left_arm_vis,

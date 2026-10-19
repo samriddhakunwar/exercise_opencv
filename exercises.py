@@ -17,6 +17,10 @@ from exercise_base import ExerciseBase
 from squat_counter import SquatCounter
 from pushup_counter import PushUpCounter
 from high_knee_counter import HighKneeCounter
+from lunge_counter import LungeCounter
+from curl_counter import CurlCounter
+from jumping_jack_counter import JumpingJackCounter
+from plank_counter import PlankCounter
 
 
 @dataclass(frozen=True)
@@ -27,7 +31,7 @@ class ExerciseSpec:
         name:        Upper-case display name shown on the HUD.
         factory:     Zero-argument callable returning a fresh counter.
         angle_label: Label next to the live angle / metric.
-        target_reps: Reps per set (shown on the HUD).
+        target_reps: Reps per set (per side for curls / lunges; holds for plank).
         target_sets: Total sets.
         bar_label:   Label above the right-side progress bar.
     """
@@ -52,5 +56,24 @@ EXERCISES: Dict[str, ExerciseSpec] = {
         "HIGH KNEES", HighKneeCounter, "Knee Ht",
         config.HIGH_KNEE_TARGET_REPS, config.HIGH_KNEE_TARGET_SETS,
         bar_label="HEIGHT",
+    ),
+    "lunge": ExerciseSpec(
+        "LUNGE", LungeCounter, "Front Knee",
+        config.LUNGE_TARGET_REPS, config.LUNGE_TARGET_SETS,
+    ),
+    "curl": ExerciseSpec(
+        "BICEP CURL", CurlCounter, "Elbow",
+        config.CURL_TARGET_REPS, config.CURL_TARGET_SETS,
+        bar_label="CURL",
+    ),
+    "jumpingjack": ExerciseSpec(
+        "JUMPING JACKS", JumpingJackCounter, "Arms",
+        config.JJ_TARGET_REPS, config.JJ_TARGET_SETS,
+        bar_label="ARMS",
+    ),
+    "plank": ExerciseSpec(
+        "PLANK", PlankCounter, "Body",
+        1, config.PLANK_TARGET_SETS,
+        bar_label="HOLD",
     ),
 }

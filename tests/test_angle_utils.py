@@ -4,6 +4,7 @@ import pytest
 
 from angle_utils import (
     AngleSmoother,
+    body_line_deviation,
     LandmarkSmoother,
     calculate_3d_angle,
     calculate_angle,
@@ -80,3 +81,14 @@ def test_map_range_inverted_and_clamped(value, expected):
 
 def test_map_range_degenerate_input_range():
     assert map_range(5, 3, 3, 10, 20) == 10
+
+
+@pytest.mark.parametrize("shoulder, ankle", [
+    ((400, 400), (800, 400)),     # head on the left
+    ((800, 400), (400, 400)),     # head on the right
+])
+def test_body_line_deviation_sign_is_facing_independent(shoulder, ankle):
+    mid_x = (shoulder[0] + ankle[0]) / 2
+    assert body_line_deviation(shoulder, (mid_x, 400), ankle) == pytest.approx(0)
+    assert body_line_deviation(shoulder, (mid_x, 440), ankle) == pytest.approx(0.1)    # sag
+    assert body_line_deviation(shoulder, (mid_x, 360), ankle) == pytest.approx(-0.1)   # pike

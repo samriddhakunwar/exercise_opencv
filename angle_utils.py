@@ -250,6 +250,33 @@ def knee_cave_detected(
     return (knee_offset / span) > threshold
 
 
+def body_line_deviation(shoulder: Point2D, hip: Point2D, ankle: Point2D) -> float:
+    """Signed hip deviation from the shoulder→ankle line.
+
+    Uses the 2-D cross product (true perpendicular distance) normalised by
+    body length, so it works for a horizontal body (push-up, plank) where a
+    y-span denominator would approach zero.
+
+    The sign is normalised for facing direction: positive always means the
+    hip is *below* the line in the image (sag), negative means above (pike).
+
+    Args:
+        shoulder: Shoulder (x, y) in image coordinates.
+        hip:      Hip (x, y).
+        ankle:    Ankle (x, y).
+
+    Returns:
+        Deviation as a fraction of body length (0.0 when undeterminable).
+    """
+    dx = ankle[0] - shoulder[0]
+    dy = ankle[1] - shoulder[1]
+    body_len_sq = dx * dx + dy * dy
+    if body_len_sq < 1e-6:
+        return 0.0
+    cross = dx * (hip[1] - shoulder[1]) - dy * (hip[0] - shoulder[0])
+    return (cross / body_len_sq) * (1.0 if dx >= 0 else -1.0)
+
+
 def map_range(
     value: float,
     in_min: float,

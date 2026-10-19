@@ -154,3 +154,51 @@ HIGH_KNEE_SMOOTHING_WINDOW: int = 5      # Frames for height moving average
 
 # UI toggles
 SHOW_KNEE_HEIGHT_BAR: bool = True        # Show knee-height progress bar
+
+# ---------------------------------------------------------------------------
+# Plank (timed hold)
+# ---------------------------------------------------------------------------
+PLANK_TARGET_SECONDS: int = 30         # Hold length that completes a set
+PLANK_TARGET_SETS: int = 3
+PLANK_SAG_THRESHOLD: float = 0.10      # Hip below shoulder-ankle line (fraction of body length)
+PLANK_PIKE_THRESHOLD: float = 0.12     # Hip above the line
+PLANK_MAX_INCLINE: float = 35.0        # Max shoulder→ankle angle from horizontal (degrees)
+PLANK_BREAK_GRACE: float = 1.0         # Seconds out of position before the hold ends
+PLANK_MAX_FRAME_DT: float = 0.5        # Cap per-frame time step (pause / lag spikes)
+CALORIES_PER_PLANK_SECOND: float = 0.07
+
+# ---------------------------------------------------------------------------
+# Jumping jacks (front view)
+# ---------------------------------------------------------------------------
+JJ_TARGET_REPS: int = 20
+JJ_TARGET_SETS: int = 3
+JJ_FEET_OPEN_RATIO: float = 1.2        # Ankle spread / shoulder width → "feet apart"
+JJ_FEET_CLOSED_RATIO: float = 0.9      # Below this → "feet together" (gap = hysteresis)
+JJ_ARMS_DOWN_MARGIN: float = 0.5       # Wrists this many shoulder-widths below shoulders
+CALORIES_PER_JUMPING_JACK: float = 0.20
+
+# ---------------------------------------------------------------------------
+# Bicep curls (per arm)
+# ---------------------------------------------------------------------------
+CURL_TARGET_REPS: int = 12             # Reps per arm per set
+CURL_TARGET_SETS: int = 3
+CURL_EXTENDED_ANGLE: float = 150.0     # Elbow angle = arm fully extended
+CURL_TOP_ANGLE: float = 55.0           # Elbow angle = fully curled
+CURL_TOP_EXIT_ANGLE: float = 75.0      # Leaving the top (hysteresis)
+CURL_REVERSAL_DELTA: float = 15.0      # Direction change that ends a partial rep
+CURL_ELBOW_DRIFT_ANGLE: float = 35.0   # Max upper-arm angle from vertical
+CURL_ELBOW_RISE_RATIO: float = 0.25    # Max elbow rise (fraction of upper-arm length)
+CURL_MIN_VISIBILITY: float = 0.5       # Ignore an arm below this visibility
+CALORIES_PER_CURL: float = 0.15
+
+# ---------------------------------------------------------------------------
+# Lunges (side view, per leg)
+# ---------------------------------------------------------------------------
+LUNGE_TARGET_REPS: int = 10            # Reps per leg per set
+LUNGE_TARGET_SETS: int = 3
+LUNGE_STANDING_ANGLE: float = 155.0    # Front-knee angle considered standing
+LUNGE_DEPTH_ANGLE: float = 100.0       # Front-knee angle for a proper lunge
+LUNGE_BOTTOM_EXIT_ANGLE: float = 120.0 # Leaving the bottom (hysteresis)
+LUNGE_KNEE_TOE_TOLERANCE: float = 0.15 # Knee may pass the toe by this × shin length
+LUNGE_FACING_MIN: float = 0.15         # |nose - shoulder mid| / torso length for side view
+CALORIES_PER_LUNGE: float = 0.35

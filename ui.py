@@ -63,9 +63,14 @@ def _alpha_rect(
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
 
+def _ascii(text: str) -> str:
+    """Hershey fonts only draw ASCII — spell out "°" and drop other symbols."""
+    return text.replace("°", " deg").encode("ascii", "ignore").decode().strip()
+
+
 def _text_size(text: str, scale: float, thickness: int) -> Tuple[int, int]:
     """Return (width, height) of a rendered text string."""
-    (w, h), _ = cv2.getTextSize(text, FONT, scale, thickness)
+    (w, h), _ = cv2.getTextSize(_ascii(text), FONT, scale, thickness)
     return w, h
 
 
@@ -79,6 +84,7 @@ def _draw_text_shadow(
     shadow_offset: int = 2,
 ) -> None:
     """Draw text with a dark drop-shadow for legibility."""
+    text = _ascii(text)
     sx, sy = pos[0] + shadow_offset, pos[1] + shadow_offset
     cv2.putText(frame, text, (sx, sy), FONT, scale, (0, 0, 0), thickness + 1, cv2.LINE_AA)
     cv2.putText(frame, text, pos, FONT, scale, color, thickness, cv2.LINE_AA)
@@ -149,6 +155,14 @@ class RenderData:
     cardio_remaining: float = 0.0       # seconds left in cardio session
     is_cardio:        bool  = False     # True when in cardio mode
     bar_label:        str   = "DEPTH"   # label above the right-side progress bar
+    # Per-side counts for curls / lunges (-1 = exercise isn't sided)
+    left_reps:        int   = -1
+    right_reps:       int   = -1
+    # Timed exercises (plank)
+    is_timed:         bool  = False
+    hold_seconds:     float = 0.0
+    target_seconds:   float = 0.0
+    best_hold:        float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -227,17 +241,28 @@ class UIRenderer:
                  (pad + w_box - 10, pad + 40),
                  config.COLOR_ACCENT, 1)
 
-        # Rep count — big number
-        rep_str = str(data.reps_in_set)
-        rw, rh = _text_size(rep_str, 2.8, 4)
-        rep_color = config.COLOR_GREEN if data.reps_in_set > 0 else config.COLOR_WHITE
-        _draw_text_shadow(frame, rep_str,
-                          (pad + 20, pad + 110), 2.8, rep_color, 4)
+        # Big number: hold time (plank), L/R counts (curls, lunges) or reps
+        if data.is_timed:
+            big, scale, label, target = (f"{int(data.hold_seconds)}s", 2.4,
+                                         "HOLD", f"/ {int(data.target_seconds)}s")
+            active = data.hold_seconds > 0
+        elif data.left_reps >= 0:
+            big, scale, label, target = (f"L{data.left_reps} R{data.right_reps}", 1.3,
+                                         "EACH", f"/ {data.target_reps}")
+            active = data.reps_in_set > 0
+        else:
+            big, scale, label, target = (str(data.reps_in_set), 2.8,
+                                         "REPS", f"/ {data.target_reps}")
+            active = data.reps_in_set > 0
+        rw, rh = _text_size(big, scale, 4)
+        rep_color = config.COLOR_GREEN if active else config.COLOR_WHITE
+        _draw_text_shadow(frame, big,
+                          (pad + 20, pad + 110), scale, rep_color, 4)
 
         # Label next to big number
-        _draw_text_shadow(frame, "REPS",
+        _draw_text_shadow(frame, label,
                           (pad + 20 + rw + 8, pad + 88), 0.55, config.COLOR_WHITE, 1)
-        _draw_text_shadow(frame, f"/ {data.target_reps}",
+        _draw_text_shadow(frame, target,
                           (pad + 20 + rw + 8, pad + 115), 0.65, config.COLOR_ORANGE, 1)
 
         # Set info
@@ -467,7 +492,15 @@ class UIRenderer:
         _alpha_rect(frame, bx1, by1, bx1 + box_w, by1 + box_h,
                     config.COLOR_SEMI_BG, alpha=0.85)
 
-        if data.exercise_name == "HIGH KNEES":
+        if data.is_timed:
+            lines = [
+                ("Sets Completed",  f"{data.sets_completed} / {data.target_sets}", config.COLOR_GREEN),
+                ("Longest Hold",    f"{data.best_hold:.1f}s",       config.COLOR_GREEN),
+                ("Duration",        _fmt_time(data.elapsed_seconds), config.COLOR_WHITE),
+                (f"Avg {data.angle_label} Angle", f"{data.avg_depth:.1f}°", config.COLOR_ORANGE),
+                ("Calories Burned", f"{data.calories:.1f} kcal",    config.COLOR_YELLOW),
+            ]
+        elif data.exercise_name == "HIGH KNEES":
             lines = [
                 ("Total Lifts",     str(data.total_lifts),         config.COLOR_GREEN),
                 ("Total Reps",      str(data.total_reps),          config.COLOR_WHITE),

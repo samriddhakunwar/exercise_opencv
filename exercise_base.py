@@ -31,9 +31,10 @@ import config
 
 @dataclass
 class JointData:
-    """Container for key joint positions (normalised 0-1 coords).
+    """Container for key joint positions (image pixel coords).
 
     Attributes:
+        nose:            (x, y) nose — used as the "head" reference.
         left_shoulder:   (x, y) left shoulder.
         right_shoulder:  (x, y) right shoulder.
         left_elbow:      (x, y) left elbow.
@@ -46,11 +47,14 @@ class JointData:
         right_knee:      (x, y) right knee.
         left_ankle:      (x, y) left ankle.
         right_ankle:     (x, y) right ankle.
+        left_foot:       (x, y) left foot index (toe tip).
+        right_foot:      (x, y) right foot index (toe tip).
         left_visibility:      Visibility score for the left leg chain.
         right_visibility:     Visibility score for the right leg chain.
         left_arm_visibility:  Visibility score for the left arm chain.
         right_arm_visibility: Visibility score for the right arm chain.
     """
+    nose:                 Tuple[float, float] = (0.0, 0.0)
     left_shoulder:        Tuple[float, float] = (0.0, 0.0)
     right_shoulder:       Tuple[float, float] = (0.0, 0.0)
     left_elbow:           Tuple[float, float] = (0.0, 0.0)
@@ -63,6 +67,8 @@ class JointData:
     right_knee:           Tuple[float, float] = (0.0, 0.0)
     left_ankle:           Tuple[float, float] = (0.0, 0.0)
     right_ankle:          Tuple[float, float] = (0.0, 0.0)
+    left_foot:            Tuple[float, float] = (0.0, 0.0)
+    right_foot:           Tuple[float, float] = (0.0, 0.0)
     left_visibility:      float = 0.0
     right_visibility:     float = 0.0
     left_arm_visibility:  float = 0.0
@@ -92,6 +98,17 @@ class FormIssue(str, enum.Enum):
     ALTERNATE_LEGS     = "ALTERNATE LEGS"
     MOVE_FASTER        = "MOVE FASTER!"
     SLOW_DOWN          = "SLOW DOWN"
+    # Plank-specific (HIPS_UP / HIPS_DOWN shared with push-ups)
+    GET_IN_PLANK       = "GET INTO PLANK POSITION"
+    # Jumping-jack-specific
+    ARMS_OVERHEAD      = "ARMS ALL THE WAY UP"
+    FEET_WIDER         = "JUMP FEET WIDER"
+    # Curl-specific
+    ELBOW_DRIFT        = "KEEP ELBOWS STILL"
+    EXTEND_ARM         = "EXTEND YOUR ARM FULLY"
+    CURL_HIGHER        = "CURL ALL THE WAY UP"
+    # Lunge-specific
+    KNEE_OVER_TOES     = "KNEE BEHIND TOES"
 
 
 @dataclass
@@ -157,6 +174,11 @@ class SessionStats:
     # ------------------------------------------------------------------
 
     @property
+    def target_reps(self) -> int:
+        """Reps per set (as configured)."""
+        return self._target_reps
+
+    @property
     def elapsed_seconds(self) -> float:
         """Seconds elapsed since the session started."""
         return time.time() - self.start_time
@@ -213,6 +235,8 @@ class ExerciseBase(ABC):
         self.depth_progress: float = 0.0
         # Live coaching text
         self.coaching_message: str = "GET READY"
+        # Phrases for the app to speak (mid-rep cues like "Hips up")
+        self._cues: List[str] = []
 
     @abstractmethod
     def process_frame(
@@ -252,6 +276,15 @@ class ExerciseBase(ABC):
 
     def on_session_start(self) -> None:
         """Called once when the countdown ends and counting begins."""
+
+    def pop_cues(self) -> List[str]:
+        """Return and clear phrases queued for the audio dispatcher."""
+        cues, self._cues = self._cues, []
+        return cues
+
+    def rep_announcement(self) -> Optional[str]:
+        """Phrase spoken when a rep is counted (None = stay quiet)."""
+        return str(self.stats.total_reps)
 
     def hud_fields(self) -> Dict[str, Any]:
         """Extra RenderData keyword arguments specific to this exercise."""
@@ -293,3 +326,61 @@ class ExerciseBase(ABC):
         if self.stats.reps_in_current_set >= target_reps:
             self.stats.sets_completed += 1
             self.stats.current_set    += 1
+
+
+# ---------------------------------------------------------------------------
+# Per-side exercises (curls, lunges)
+# ---------------------------------------------------------------------------
+
+class SidedExerciseBase(ExerciseBase):
+    """Base for exercises counted per side with a per-side target.
+
+    A set completes when *both* sides reach ``TARGET_REPS``.  SessionStats is
+    configured with ``2 × TARGET_REPS`` so ``reps_in_current_set`` is the
+    combined left + right count for the current set.
+    """
+
+    def __init__(self) -> None:
+        """Initialise per-side counters."""
+        super().__init__()
+        self.stats.configure(2 * self.TARGET_REPS, self.TARGET_SETS)
+        self.side_reps:  Dict[str, int] = {"left": 0, "right": 0}   # current set
+        self.side_total: Dict[str, int] = {"left": 0, "right": 0}   # whole session
+        self._last_side: str = "left"
+
+    def _accept_side_rep(self, side: str, duration: float, angle: float) -> None:
+        """Record one accepted rep on *side* and roll the set over if done.
+
+        Reps beyond the target on one side are kept in ``side_total`` (and
+        calories) but not in ``stats.total_reps`` / the current set, so
+        ``reps_in_current_set`` never exceeds the combined target.
+        """
+        self._last_side = side
+        self.side_total[side] += 1
+        self.stats.rep_durations.append(duration)
+        self.stats.depths.append(angle)
+        self.stats.calories = sum(self.side_total.values()) * self.CALORIES_PER_REP
+        if self.side_reps[side] >= self.TARGET_REPS:
+            return
+        self.side_reps[side] += 1
+        self.stats.total_reps += 1
+        if all(n >= self.TARGET_REPS for n in self.side_reps.values()):
+            self.stats.sets_completed += 1
+            self.stats.current_set    += 1
+            self.side_reps = {"left": 0, "right": 0}
+
+    def rep_announcement(self) -> Optional[str]:
+        """Speak the side and its count, e.g. "Left 4"."""
+        side = self._last_side
+        return f"{side.capitalize()} {self.side_total[side]}"
+
+    def hud_fields(self) -> Dict[str, Any]:
+        """Per-side counts for the HUD."""
+        return {"left_reps": self.side_reps["left"], "right_reps": self.side_reps["right"]}
+
+    def csv_rows(self, angle_label: str) -> List[List[Any]]:
+        """Base rows plus per-side totals."""
+        return super().csv_rows(angle_label) + [
+            ["Left Reps",  self.side_total["left"]],
+            ["Right Reps", self.side_total["right"]],
+        ]
