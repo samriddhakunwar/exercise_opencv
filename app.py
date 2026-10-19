@@ -307,8 +307,6 @@ class FitnessTrackerApp:
 
         # Dirs
         Path("screenshots").mkdir(exist_ok=True)
-        if config.ENABLE_RECORDING:
-            Path(config.RECORDING_DIR).mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
     # Exercise management
@@ -455,6 +453,9 @@ class FitnessTrackerApp:
         if not self._headless:
             cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_NORMAL)
             cv2.resizeWindow(WINDOW_TITLE, config.FRAME_WIDTH, config.FRAME_HEIGHT)
+
+        if config.ENABLE_RECORDING and not self._headless:
+            self._toggle_recording()
 
         self._begin_countdown()
         spec = EXERCISES[self._exercise_key]
@@ -863,12 +864,13 @@ class FitnessTrackerApp:
         """Start or stop video recording of the session."""
         if self._writer is None:
             ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            Path(config.RECORDING_DIR).mkdir(parents=True, exist_ok=True)
             path = f"{config.RECORDING_DIR}/session_{ts}.mp4"
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            self._writer = cv2.VideoWriter(
-                path, fourcc, config.TARGET_FPS,
-                (config.FRAME_WIDTH, config.FRAME_HEIGHT)
-            )
+            # Size must match the frames exactly or OpenCV silently writes nothing
+            size = (int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                    int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+            self._writer = cv2.VideoWriter(path, fourcc, config.TARGET_FPS, size)
             print(f"[INFO] Recording started: {path}")
         else:
             self._writer.release()
