@@ -94,6 +94,19 @@ def test_calibrate_then_count_with_calibrated_thresholds(run_video, tmp_path):
     assert tracker._counter.stats.total_reps == 3
 
 
+def test_auto_mode_switches_and_counts(run_video):
+    squat = [squat_pose(a) for a in hold(175, 6) + ramp(175, 85, 15) + ramp(85, 175, 15)]
+    push  = [pushup_pose(a) for a in hold(170, 6) + ramp(170, 80, 15) + ramp(80, 170, 15)]
+    tracker = run_video("plank", squat * 6 + push * 8, auto=True)
+
+    assert tracker._exercise_key == "pushup"
+    squats, pushups = history.last_session("squat"), history.last_session("pushup")
+    # ~1.5 s of each block is spent detecting, so not every rep counts
+    assert squats["reps"] >= 3
+    assert pushups["reps"] == tracker._counter.stats.total_reps >= 4
+    assert history.last_session("plank") is None        # nothing recorded for it
+
+
 def test_parse_args():
     args = app.parse_args(["--video", "x.mp4", "--exercise", "curl", "--camera", "2",
                            "--no-audio", "--headless", "--calibrate"])

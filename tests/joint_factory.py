@@ -161,6 +161,7 @@ def lunge_pose(front_angle: float, front: str = "left",
     return make_joints(
         nose=(hip[0] + 40.0, hip[1] - 240.0),
         left_shoulder=shoulder, right_shoulder=shoulder,
+        left_elbow=(hip[0], hip[1] - 100.0), left_wrist=(hip[0], hip[1]),   # arms down
         left_hip=hip, right_hip=hip,
         **{f"{front}_knee": f_knee, f"{front}_ankle": f_ankle,
            f"{front}_foot": (740.0, 650.0),

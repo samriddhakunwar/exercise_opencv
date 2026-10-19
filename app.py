@@ -21,12 +21,14 @@ Command line
     --camera N   override CAMERA_INDEX     --no-audio   disable TTS
     --calibrate  run calibration for the starting exercise first
     python app.py --routine fullbody      run a routine from routines.json
+    python app.py --auto                  detect the exercise automatically
 
 Keyboard shortcuts
 ~~~~~~~~~~~~~~~~~~
     Space  → Pause / Resume
     R      → Reset current session
     C      → Calibrate thresholds for the current exercise
+    A      → Toggle automatic exercise detection
     E      → Switch exercise (cycles through exercises.EXERCISES);
              in a routine: skip to the next step
     S      → Save screenshot
@@ -57,6 +59,7 @@ import numpy as np
 
 import calibration
 import clock
+from auto_detect import ExerciseClassifier
 import config
 import history
 import routine as routines
@@ -227,6 +230,7 @@ class FitnessTrackerApp:
         headless: bool = False,
         calibrate: bool = False,
         routine: Optional[str] = None,
+        auto: bool = False,
     ) -> None:
         """Initialise all subsystems.
 
@@ -238,6 +242,7 @@ class FitnessTrackerApp:
             headless: Run without a window and print the final stats.
             calibrate: Start with calibration for the starting exercise.
             routine:  Name of a routine in routines.json to run.
+            auto:     Detect the exercise from the pose and switch counters.
         """
         self._video    = video
         self._camera   = config.CAMERA_INDEX if camera is None else camera
@@ -268,6 +273,12 @@ class FitnessTrackerApp:
             while self._routine.step.is_rest:      # tolerate leading rests
                 self._routine.advance()
             exercise = self._routine.step.exercise
+
+        # Automatic exercise detection (not used while a routine runs)
+        if auto and routine:
+            print("[WARN] --auto is ignored while a routine is running.")
+        self._auto = auto and not routine
+        self._classifier = ExerciseClassifier()
 
         # Exercise state
         self._exercise_key  = exercise or next(iter(EXERCISES))
@@ -534,6 +545,25 @@ class FitnessTrackerApp:
         self._begin_countdown()
         return metric or 0.0
 
+    def _update_auto(self, joints) -> None:
+        """Classify the pose and switch counters when a new exercise is stable."""
+        detected = self._classifier.update(joints, clock.now())
+        if detected is None or detected == self._exercise_key:
+            return
+        self._save_session()
+        self._set_exercise(detected)
+        self._in_countdown = False          # switch mid-movement: no countdown
+        self._start_counting()
+        name = EXERCISES[detected].name
+        self._audio.say(f"Detected {name}")
+        print(f"[INFO] Auto-detected: {name}")
+
+    def _auto_banner(self) -> str:
+        """HUD text for auto mode, e.g. "AUTO: SQUAT 92%"."""
+        c = self._classifier.candidate
+        name = EXERCISES[c].name if c else "..."
+        return f"AUTO: {name} {self._classifier.confidence:.0%}"
+
     def _start_counting(self) -> None:
         """Countdown finished: reset the session timer and start counting."""
         self._counter.stats.start_time = clock.now()
@@ -579,6 +609,10 @@ class FitnessTrackerApp:
         if calibrating:
             cal_message = self._calibrator.message
             cal_metric  = self._update_calibration(joints, frame.shape[:2])
+        elif self._auto and not self._paused and not self._in_countdown:
+            self._update_auto(joints)
+            stats = self._counter.stats          # the counter may have changed
+            spec  = EXERCISES[self._exercise_key]
 
         # ---- Exercise counting (skip during countdown/pause) ---------
         rep_result: Optional[RepResult] = None
@@ -636,6 +670,7 @@ class FitnessTrackerApp:
             last_session     = self._last_text,
             banner           = ("NEW RECORD!" if self._new_record
                                 else self._routine.progress_text() if self._routine
+                                else self._auto_banner() if self._auto
                                 else ""),
         )
         fields.update(self._counter.hud_fields())   # exercise-specific extras
@@ -780,6 +815,10 @@ class FitnessTrackerApp:
             elif not self._routine.done:
                 self._save_session()
                 self._advance_routine()
+        elif key == ord("a") and self._routine is None:   # A → auto detect on/off
+            self._auto = not self._auto
+            self._classifier = ExerciseClassifier()
+            self._audio.say("Auto detect on." if self._auto else "Auto detect off.")
         elif key == ord("c"):                   # C → calibrate / cancel
             if self._calibrator is None:
                 self._start_calibration()
@@ -902,6 +941,8 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="calibrate thresholds for the starting exercise first")
     parser.add_argument("--routine", metavar="NAME",
                         help="run a workout routine from routines.json")
+    parser.add_argument("--auto", action="store_true",
+                        help="detect the exercise automatically and switch counters")
     return parser.parse_args(argv)
 
 
@@ -915,5 +956,6 @@ if __name__ == "__main__":
         headless=args.headless,
         calibrate=args.calibrate,
         routine=args.routine,
+        auto=args.auto,
     )
     app.run()

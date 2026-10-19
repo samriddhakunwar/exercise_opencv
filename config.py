@@ -218,3 +218,18 @@ CALIBRATION_TIMEOUT: float = 30.0        # Max seconds for the reps phase
 # Workout routines (--routine NAME)
 # ---------------------------------------------------------------------------
 ROUTINES_FILE: str = "routines.json"
+
+# ---------------------------------------------------------------------------
+# Automatic exercise detection (A key / --auto)
+# ---------------------------------------------------------------------------
+AUTO_WINDOW_SECONDS: float = 1.5    # Feature window each frame label looks at
+AUTO_STABLE_SECONDS: float = 1.5    # A label must hold this long before switching
+AUTO_MIN_AGREEMENT: float = 0.8     # Share of frame labels that must agree
+AUTO_HORIZONTAL_MAX: float = 35.0   # Shoulder-ankle incline below this = lying
+AUTO_VERTICAL_MIN: float = 55.0     # Incline above this = standing
+AUTO_ELBOW_MOTION: float = 25.0     # Elbow-angle range (deg) → push-up, else plank
+AUTO_KNEE_BEND: float = 140.0       # Knee angle below this = knees bending
+AUTO_KNEE_LIFT: float = -0.15       # (hip_y - knee_y) / leg length above this = knee up
+AUTO_LUNGE_STANCE: float = 0.5      # Ankle x spread / leg length for a split stance
+AUTO_LUNGE_KNEE_DIFF: float = 0.15  # Knee height difference / leg length
+AUTO_FRONT_VIEW_MIN: float = 0.3   # Shoulder width / torso length for a front view

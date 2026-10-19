@@ -569,7 +569,7 @@ class UIRenderer:
 
     def _render_hotkey_hint(self, frame: np.ndarray) -> None:
         """Small hotkey reference in the bottom-left area."""
-        hints = "SPACE=Pause  R=Reset  E=Exercise  C=Calibrate  Q=Quit  S=Screenshot"
+        hints = "SPACE=Pause  R=Reset  E=Exercise  C=Calibrate  A=Auto  Q=Quit  S=Screenshot"
         hw, _ = _text_size(hints, 0.42, 1)
         _draw_text_shadow(frame, hints,
                           (self._w // 2 - hw // 2, self._h - 68),
