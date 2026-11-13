@@ -85,7 +85,7 @@ def high_knee_pose(left_lift: float, right_lift: float) -> JointData:
     """Front-view marching pose.
 
     *lift* is the counter's own metric ``(hip_y - knee_y) / hip_y`` in
-    normalised units; -0.5 ≈ standing, ≥ 0.72 = high knee.
+    normalised units; -0.5 ≈ standing, ≥ 0 = knee at hip height.
     """
     hip_y = 360.0
 

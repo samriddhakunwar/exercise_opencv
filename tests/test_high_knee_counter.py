@@ -33,7 +33,7 @@ def test_same_leg_twice_does_not_complete_rep():
 
 def test_low_lift_does_not_count():
     c = HighKneeCounter()
-    feed(c, lift("left", height=0.3) + lift("right", height=0.3))
+    feed(c, lift("left", height=-0.2) + lift("right", height=-0.2))
     assert c.total_lifts == 0
 
 
@@ -73,3 +73,10 @@ def test_bent_support_leg_does_not_count():
         poses.append(p)
     feed(c, poses)
     assert c.total_lifts == 0
+
+
+def test_knee_at_hip_height_counts():
+    c = HighKneeCounter()
+    feed(c, lift("left", height=0.05) + lift("right", height=0.05))
+    assert c.total_lifts == 2 and c.stats.total_reps == 1
+    assert c.depth_progress == 0.0   # back to standing

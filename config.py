@@ -143,7 +143,7 @@ HIGH_KNEE_TARGET_SETS: int = 3           # Total sets
 HIGH_KNEE_CARDIO_DURATIONS: list = [30, 45, 60]
 
 # Detection thresholds
-HIGH_KNEE_MIN_HEIGHT_RATIO: float = 0.72  # Knee y / hip y  (1.0 = at hip level)
+HIGH_KNEE_MIN_HEIGHT_RATIO: float = 0.0   # (hip_y - knee_y) / hip_y: 0 = knee at hip level, ~-0.4 standing
 HIGH_KNEE_SUPPORT_KNEE_ANGLE: float = 150.0  # Min knee angle on supporting leg
 HIGH_KNEE_MIN_LIFT_DELTA: float = 0.05   # Min upward movement before "up" counts
 

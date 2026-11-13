@@ -276,7 +276,9 @@ class HighKneeCounter(ExerciseBase):
 
         # Expose the currently active leg's height for the progress bar
         active_lift = max(l_lift, r_lift)
-        self.current_knee_height = max(0.0, min(1.0, active_lift))
+        # 0 = standing (~-0.4), 1 = at the lift threshold
+        self.current_knee_height = map_range(
+            active_lift, -0.4, config.HIGH_KNEE_MIN_HEIGHT_RATIO, 0.0, 1.0)
         self.depth_progress = self.current_knee_height   # reuse base field
 
         # --- Supporting leg knee angle ----------------------------------
@@ -521,9 +523,9 @@ class HighKneeCounter(ExerciseBase):
         # If one knee is mid-air check it passes the height bar
         active = max(l_lift, r_lift)
         if (
-            (self._left_state in (LegState.LIFTING, LegState.UP) and l_lift < config.HIGH_KNEE_MIN_HEIGHT_RATIO * 0.8)
+            (self._left_state in (LegState.LIFTING, LegState.UP) and l_lift < config.HIGH_KNEE_MIN_HEIGHT_RATIO - 0.1)
             or
-            (self._right_state in (LegState.LIFTING, LegState.UP) and r_lift < config.HIGH_KNEE_MIN_HEIGHT_RATIO * 0.8)
+            (self._right_state in (LegState.LIFTING, LegState.UP) and r_lift < config.HIGH_KNEE_MIN_HEIGHT_RATIO - 0.1)
         ):
             return FormIssue.RAISE_KNEES_HIGHER
 
