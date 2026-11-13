@@ -187,8 +187,8 @@ class PushUpCounter(ExerciseBase):
                 self._rep_depth_ok = True
                 self.coaching_message = "GREAT DEPTH! PUSH UP!"
             elif smooth_angle <= config.PUSHUP_LOWER_LIMIT:
-                form_issue = FormIssue.GO_LOWER_PU
-                self.coaching_message = FormIssue.GO_LOWER_PU.value
+                form_issue = FormIssue.GO_LOWER
+                self.coaching_message = FormIssue.GO_LOWER.value
 
             if smooth_angle > config.PUSHUP_LOWER_LIMIT:
                 self._state = PushUpState.PUSHING_UP
@@ -242,7 +242,7 @@ class PushUpCounter(ExerciseBase):
 
         issue = FormIssue.NONE
         if not self._rep_depth_ok:
-            issue = FormIssue.GO_LOWER_PU
+            issue = FormIssue.GO_LOWER
         elif not self._rep_ext_ok:
             issue = FormIssue.LOCK_ARMS
         elif not self._rep_body_ok:

@@ -737,7 +737,6 @@ class FitnessTrackerApp:
                     FormIssue.BAD_BACK:           "Straighten your back",
                     FormIssue.KNEE_CAVE:          "Knees out",
                     # Push-up issues
-                    FormIssue.GO_LOWER_PU:        "Go lower",
                     FormIssue.LOCK_ARMS:          "Lock out your arms",
                     FormIssue.STRAIGHTEN:         "Straighten your body",
                     FormIssue.HIPS_UP:            "Keep your hips up",

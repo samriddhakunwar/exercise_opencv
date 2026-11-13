@@ -24,7 +24,7 @@ def test_shallow_rep_does_not_count():
     c = PushUpCounter()
     results = feed(c, pushup_rep(bottom=115))
     assert c.stats.total_reps == 0
-    assert [r.form_issue for r in results] == [FormIssue.GO_LOWER_PU]
+    assert [r.form_issue for r in results] == [FormIssue.GO_LOWER]
     assert c.state == PushUpState.TOP
 
 

@@ -88,7 +88,6 @@ class FormIssue(str, enum.Enum):
     BODY_NOT_FOUND = "STEP INTO FRAME"
     # Push-up-specific
     LOCK_ARMS      = "LOCK OUT YOUR ARMS"
-    GO_LOWER_PU    = "GO LOWER"
     STRAIGHTEN     = "STRAIGHTEN YOUR BODY"
     HIPS_UP        = "KEEP YOUR HIPS UP"
     HIPS_DOWN      = "LOWER YOUR HIPS"
