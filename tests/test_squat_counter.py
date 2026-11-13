@@ -23,8 +23,16 @@ def test_clean_rep_counts_once():
 
 def test_shallow_rep_does_not_count():
     c = SquatCounter()
-    feed(c, squat_rep(bottom=125))
+    results = feed(c, squat_rep(bottom=125))
     assert c.stats.total_reps == 0
+    assert [r.form_issue for r in results] == [FormIssue.GO_LOWER]
+    assert c.state == SquatState.STANDING
+
+
+def test_small_dip_is_ignored():
+    c = SquatCounter()
+    assert feed(c, squat_rep(bottom=150)) == []
+    assert c.state == SquatState.STANDING
 
 
 def test_holding_and_bouncing_at_bottom_counts_once():

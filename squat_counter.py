@@ -160,6 +160,13 @@ class SquatCounter(ExerciseBase):
 
             if smooth_angle <= config.SQUAT_DEPTH_ANGLE:
                 self._state = SquatState.BOTTOM
+            elif smooth_angle >= config.STANDING_ANGLE_MIN:
+                # Stood back up without reaching depth: shallow rep.
+                # Ignore tiny dips (noise) — same 10° margin as lunges.
+                self._state = SquatState.STANDING
+                if self._rep_min_angle < config.STANDING_ANGLE_MIN - 10:
+                    rep_result = self._finalise_rep()
+                    form_issue = rep_result.form_issue
 
         elif self._state == SquatState.BOTTOM:
             self._rep_min_angle = min(self._rep_min_angle, smooth_angle)
