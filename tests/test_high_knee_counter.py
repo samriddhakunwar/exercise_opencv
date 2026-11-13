@@ -2,7 +2,7 @@
 
 import config
 from high_knee_counter import HighKneeCounter, HighKneeMode
-from joint_factory import feed, high_knee_pose, hold
+from joint_factory import bend, feed, high_knee_pose, hold
 
 DOWN = -0.5      # standing knee height
 UP   = 0.9       # above HIGH_KNEE_MIN_HEIGHT_RATIO
@@ -59,3 +59,17 @@ def test_sets_roll_over_at_target():
     assert c.stats.sets_completed == 1
     assert c.stats.current_set == 2
     assert c.stats.reps_in_current_set == 0
+
+
+def test_bent_support_leg_does_not_count():
+    """Lifting while squatting on the other leg is not a high knee."""
+    c = HighKneeCounter()
+    poses = []
+    for h in hold(DOWN, 8) + hold(UP, 8) + hold(DOWN, 8):
+        p = high_knee_pose(h, DOWN)
+        hip = p.right_hip
+        p.right_knee = (hip[0], hip[1] + 100)
+        p.right_ankle = bend(hip, p.right_knee, 110, 100)   # 110° support knee
+        poses.append(p)
+    feed(c, poses)
+    assert c.total_lifts == 0

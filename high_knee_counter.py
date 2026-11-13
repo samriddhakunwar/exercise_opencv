@@ -453,7 +453,7 @@ class HighKneeCounter(ExerciseBase):
             if lift >= threshold:
                 set_state(LegState.UP)
                 # Confirm: only count if support leg is reasonably straight
-                if support_angle >= config.HIGH_KNEE_SUPPORT_KNEE_ANGLE or True:
+                if support_angle >= config.HIGH_KNEE_SUPPORT_KNEE_ANGLE:
                     counted = True
             elif lift < prev_lift - delta_gate:
                 # Knee dropped before reaching threshold — discard
