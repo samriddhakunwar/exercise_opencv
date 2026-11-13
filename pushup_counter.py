@@ -173,6 +173,13 @@ class PushUpCounter(ExerciseBase):
             if smooth_angle <= config.PUSHUP_BOTTOM_ANGLE:
                 self._state        = PushUpState.BOTTOM
                 self._rep_depth_ok = True
+            elif smooth_angle >= config.PUSHUP_TOP_ANGLE:
+                # Pushed back up without reaching depth: shallow rep.
+                # Ignore tiny dips (noise) — same 10° margin as lunges.
+                self._state = PushUpState.TOP
+                if self._rep_min_angle < config.PUSHUP_TOP_ANGLE - 10:
+                    rep_result = self._finalise_rep(smooth_angle)
+                    form_issue = rep_result.form_issue
 
         elif self._state == PushUpState.BOTTOM:
             self._rep_min_angle = min(self._rep_min_angle, smooth_angle)

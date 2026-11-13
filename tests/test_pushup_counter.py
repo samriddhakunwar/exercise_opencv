@@ -22,8 +22,16 @@ def test_clean_rep_counts_once():
 
 def test_shallow_rep_does_not_count():
     c = PushUpCounter()
-    feed(c, pushup_rep(bottom=115))
+    results = feed(c, pushup_rep(bottom=115))
     assert c.stats.total_reps == 0
+    assert [r.form_issue for r in results] == [FormIssue.GO_LOWER_PU]
+    assert c.state == PushUpState.TOP
+
+
+def test_small_dip_is_ignored():
+    c = PushUpCounter()
+    assert feed(c, pushup_rep(bottom=150)) == []
+    assert c.state == PushUpState.TOP
 
 
 def test_holding_at_bottom_counts_once():
